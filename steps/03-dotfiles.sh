@@ -1,27 +1,28 @@
 #!/bin/bash
-# Copy config files to the system.
+# Link config files into the system using symlinks.
 set -uo pipefail
 [ -z "${OS_TYPE:-}" ] && source "${DOTFILES_DIR:-.}/lib/detect.sh"
 D="${DOTFILES_DIR:?DOTFILES_DIR not set}"
 
-echo "[03] Applying dotfiles..."
-mkdir -p ~/.config/nvim ~/.local/bin
+lnk() { mkdir -p "$(dirname "$2")"; ln -sf "$1" "$2"; }
 
-cp "$D/config/zsh/zshrc" ~/.zshrc
-cp "$D/config/nvim/init.lua" ~/.config/nvim/init.lua
+echo "[03] Applying dotfiles..."
+
+lnk "$D/config/zsh/zshrc"       "$HOME/.zshrc"
+lnk "$D/config/nvim/init.lua"   "$HOME/.config/nvim/init.lua"
 
 # ghostty config + terminfo (desktop only or if ghostty is already installed)
 if { [ "$OS_TYPE" = "Darwin" ] && [ "$IS_VM" = "no" ]; } || [ -d ~/.config/ghostty ]; then
-  mkdir -p ~/.config/ghostty
-  cp "$D/config/ghostty/config" ~/.config/ghostty/config
+  lnk "$D/config/ghostty/config" "$HOME/.config/ghostty/config"
   if ! infocmp xterm-ghostty >/dev/null 2>&1 && [ -f "$D/config/ghostty/ghostty.terminfo" ]; then
     sudo tic -x "$D/config/ghostty/ghostty.terminfo" 2>/dev/null || tic -x "$D/config/ghostty/ghostty.terminfo" 2>/dev/null || true
   fi
 fi
 
-# git config (delta)
-cp "$D/config/git/gitconfig" ~/.gitconfig.delta
-git config --global include.path ~/.gitconfig.delta
+# git config (delta) — cp because git include.path resolves symlinks fine,
+# but we keep it as a copy to avoid git reading a path inside the repo.
+cp "$D/config/git/gitconfig" "$HOME/.gitconfig.delta"
+git config --global include.path "$HOME/.gitconfig.delta"
 if [ -z "$(git config --global user.name)" ] && [ "${INTERACTIVE:-no}" = "yes" ]; then
   read -p "Git name: " GIT_NAME
   read -p "Git email: " GIT_EMAIL
