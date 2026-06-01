@@ -8,7 +8,14 @@ lnk() { mkdir -p "$(dirname "$2")"; ln -sf "$1" "$2"; }
 
 echo "[03] Applying dotfiles..."
 
-lnk "$D/config/zsh/zshrc"       "$HOME/.zshrc"
+# ~/.zshrc is a thin real file (not a symlink) so machine-local overlays can
+# append to ~/.zshrc.local without writing into the versioned repo file.
+if [ ! -f "$HOME/.zshrc" ] || [ -L "$HOME/.zshrc" ] || ! grep -q '.dotfiles/config/zsh/zshrc' "$HOME/.zshrc"; then
+  cat > "$HOME/.zshrc" <<EOF
+# Managed by dotfiles. Public config lives in the repo; local overlays in ~/.zshrc.local.
+[ -f "\$HOME/.dotfiles/config/zsh/zshrc" ] && source "\$HOME/.dotfiles/config/zsh/zshrc"
+EOF
+fi
 lnk "$D/config/nvim/init.lua"   "$HOME/.config/nvim/init.lua"
 
 # ghostty config + terminfo (desktop only or if ghostty is already installed)

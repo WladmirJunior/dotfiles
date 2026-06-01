@@ -141,3 +141,7 @@ zstyle ':vcs_info:git:*' actionformats ' %F{4}git:(%F{1}%b|%a%F{4})%f%u%c'
 setopt PROMPT_SUBST
 RPROMPT='%F{8}[%T]%f'
 PROMPT='%(?:%F{2}➜:%F{1}➜)%f %F{6}%c%(#.#.)%f${vcs_info_msg_0_} '
+
+# ─────────────────────────── Local overlay (optional) ───────────────────────────
+# Machine-specific config registers itself here. Not part of this repo.
+[ -f ~/.zshrc.local ] && source ~/.zshrc.local
