@@ -16,17 +16,10 @@ The installer detects the host (physical Mac, Mac VM, or Linux/VM) and skips GUI
 
 **Mac apps installed by default (physical Mac only):**
 - Ghostty (terminal)
-- Typora (markdown editor)
-- Brave Browser (set as default for http/https)
 - 1Password (App Store opens automatically if missing)
 - Fonts: JetBrains Mono, Monaspace
 - duti (default app helper)
-
-**Mac apps prompted as opt-in:**
-- Google Chrome
-- Firefox
-- Zed editor
-- AI tools: Claude Code, Gemini CLI, GitHub Copilot, Codex, Cursor
+- Touch ID for sudo (pam_tid)
 
 **Configs:**
 - `config/zsh/zshrc`: ZSH with aliases, prompt, history, modern unix tool replacements
@@ -66,7 +59,7 @@ curl -fsSL .../install.sh | bash -s -- pentest
 
 - `install.sh`: orchestrator. Detects environment, reads profile, runs steps.
 - `lib/detect.sh`: OS, arch, VM, headless, TTY detection.
-- `steps/`: `01-packages` (CLI), `02-shell` (fzf+plugins), `03-dotfiles` (configs), `04-apps` (GUI/AI, desktop only).
+- `steps/`: `01-packages` (CLI), `02-shell` (fzf+plugins), `03-dotfiles` (configs), `04-apps` (GUI, desktop only).
 - `profiles/`: step list per machine type.
 
 The installer detects VM (skips GUI apps), headless (skips GUI on Linux), and TTY: interactive mode prompts for opt-in apps; via `curl|bash` (no TTY) uses defaults.
