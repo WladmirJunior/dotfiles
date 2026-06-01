@@ -1,0 +1,143 @@
+# ─────────────────────────── PATH ───────────────────────────
+export PATH="$HOME/.local/bin:$PATH"
+export PATH="$PATH:/usr/local/bin"
+
+# ─────────────────────────── Shortcuts ───────────────────────────
+alias sr="source ~/.zshrc"
+alias vsh="nvim ~/.zshrc"
+
+# ─────────────────────────── Modern Unix Tools ───────────────────────────
+alias v='nvim'
+alias vi='nvim'
+alias ls='eza --icons --git --group-directories-first'
+alias ll='eza -l --icons --git --group-directories-first'
+alias la='eza -a --icons --git --group-directories-first'
+alias lt='eza --tree --icons'
+alias cat='bat'
+alias grep='rg'
+alias find='fd'
+alias help='tldr'
+
+# ─────────────────────────── Git ───────────────────────────
+alias g='git'
+alias gst='git status'
+alias ga='git add'
+alias gaa='git add --all'
+alias gcmsg='git commit -m'
+alias gp='git push'
+alias gpf='git push --force-with-lease'
+alias gl='git pull'
+alias gd='git diff'
+alias gds='git diff --staged'
+alias gb='git branch'
+alias gco='git checkout'
+alias gsw='git switch'
+alias gswc='git switch -c'
+alias grs='git restore'
+alias grss='git restore --staged'
+alias gsr='git remote -v'
+alias glg='git log --oneline --graph --decorate'
+alias grbi='git rebase -i'
+alias gfa='git fetch --all --prune'
+function current_branch() { git rev-parse --abbrev-ref HEAD 2>/dev/null; }
+alias ggpull='git pull origin $(current_branch)'
+alias ggpush='git push origin $(current_branch)'
+
+# ─────────────────────────── SSH ───────────────────────────
+alias sshx='TERM=xterm-256color ssh'
+
+# ─────────────────────────── History ───────────────────────────
+HISTFILE=~/.zsh_history
+HISTSIZE=50000
+SAVEHIST=50000
+setopt EXTENDED_HISTORY
+setopt INC_APPEND_HISTORY
+setopt SHARE_HISTORY
+setopt HIST_FCNTL_LOCK
+setopt HIST_IGNORE_DUPS
+setopt HIST_IGNORE_ALL_DUPS
+setopt HIST_IGNORE_SPACE
+setopt HIST_REDUCE_BLANKS
+setopt HIST_VERIFY
+unsetopt HIST_BEEP
+
+# ─────────────────────────── Keybindings ───────────────────────────
+bindkey '^?' backward-delete-char
+bindkey '^H' backward-delete-char
+
+sudo-command-line() {
+    [[ -z $BUFFER ]] && zle up-history
+    if [[ $BUFFER == sudo\ * ]]; then
+        LBUFFER="${LBUFFER#sudo }"
+    else
+        LBUFFER="sudo $LBUFFER"
+    fi
+}
+zle -N sudo-command-line
+bindkey '\e\e' sudo-command-line
+
+# ─────────────────────────── Completion & Plugins ───────────────────────────
+autoload -Uz compinit
+if [[ -n ~/.zcompdump(#qN.mh+24) ]]; then
+    compinit
+else
+    compinit -C
+fi
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+export FZF_DEFAULT_OPTS='--height 50% --layout=reverse --border --info=inline'
+export FZF_CTRL_R_OPTS='--preview "echo {}" --preview-window=down:3:wrap'
+export FZF_CTRL_T_OPTS='--preview "bat --color=always --style=numbers --line-range=:200 {} 2>/dev/null || cat {}"'
+export FZF_ALT_C_OPTS='--preview "ls -la --color=always {} | head -50 2>/dev/null || ls -la {}"'
+[ -f ~/.config/zsh-plugins/fzf-tab/fzf-tab.plugin.zsh ] && source ~/.config/zsh-plugins/fzf-tab/fzf-tab.plugin.zsh
+[ -f ~/.config/zsh-plugins/zsh-you-should-use/you-should-use.plugin.zsh ] && source ~/.config/zsh-plugins/zsh-you-should-use/you-should-use.plugin.zsh
+if command -v zoxide &>/dev/null; then
+    if [[ ! -f ~/.zoxide.zsh ]] || [[ -n ~/.zoxide.zsh(#qN.mh+168) ]]; then
+        zoxide init zsh > ~/.zoxide.zsh
+    fi
+    source ~/.zoxide.zsh
+fi
+[ -f ~/.config/zsh-plugins/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh ] && source ~/.config/zsh-plugins/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh
+
+# Use the active Ghostty theme's selection-background as the bracketed-paste
+# highlight color. Falls through silently when Ghostty is not installed.
+_paste_highlight_init() {
+  local config="${HOME}/.config/ghostty/config"
+  [[ -f "$config" ]] || return
+  local theme
+  theme=$(awk -F= '/^[[:space:]]*theme[[:space:]]*=/ {gsub(/^[[:space:]]+|[[:space:]]+$/,"",$2); print $2; exit}' "$config")
+  [[ -n "$theme" ]] || return
+  local candidate theme_file
+  for candidate in \
+    "/Applications/Ghostty.app/Contents/Resources/ghostty/themes/${theme}" \
+    "/usr/share/ghostty/themes/${theme}" \
+    "/usr/local/share/ghostty/themes/${theme}"
+  do
+    [[ -f "$candidate" ]] && { theme_file="$candidate"; break; }
+  done
+  [[ -n "$theme_file" ]] || return
+  local color
+  color=$(awk -F= '/^[[:space:]]*selection-background[[:space:]]*=/ {gsub(/^[[:space:]]+|[[:space:]]+$|#/,"",$2); print $2; exit}' "$theme_file")
+  [[ -n "$color" ]] || return
+  zle_highlight=(paste:bg=#${color})
+}
+_paste_highlight_init
+unfunction _paste_highlight_init
+
+if [[ "$(uname)" == "Darwin" ]]; then
+    HB_CNF_HANDLER="/opt/homebrew/Library/Homebrew/command-not-found/handler.sh"
+    [ -f "$HB_CNF_HANDLER" ] && source "$HB_CNF_HANDLER"
+else
+    [ -r /etc/zsh_command_not_found ] && source /etc/zsh_command_not_found
+fi
+
+# ─────────────────────────── Prompt ───────────────────────────
+autoload -Uz vcs_info
+precmd() { vcs_info }
+zstyle ':vcs_info:git:*' check-for-changes true
+zstyle ':vcs_info:git:*' stagedstr ' %F{3}✚%f'
+zstyle ':vcs_info:git:*' unstagedstr ' %F{1}✗%f'
+zstyle ':vcs_info:git:*' formats ' %F{4}git:(%F{1}%b%F{4})%f%u%c'
+zstyle ':vcs_info:git:*' actionformats ' %F{4}git:(%F{1}%b|%a%F{4})%f%u%c'
+setopt PROMPT_SUBST
+RPROMPT='%F{8}[%T]%f'
+PROMPT='%(?:%F{2}➜:%F{1}➜)%f %F{6}%c%(#.#.)%f${vcs_info_msg_0_} '
