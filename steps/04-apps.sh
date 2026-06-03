@@ -1,15 +1,14 @@
 #!/bin/bash
-# Base GUI apps + OS tweaks. Desktop only (skips headless/VM).
+# Base GUI apps + OS tweaks. Skips only headless hosts (no display).
 # Terminal, fonts, password manager, Touch ID for sudo. Personal apps
 # (browsers, editors, container runtimes) live in the private overlay.
 set -uo pipefail
 [ -z "${OS_TYPE:-}" ] && source "${DOTFILES_DIR:-.}/lib/detect.sh"
 
+# Skip GUI apps only when there's no display (headless). A VM WITH a UI (e.g. a
+# tart/UTM desktop VM) should still get GUI apps; only headless hosts skip.
 if [ "${HEADLESS:-no}" = "yes" ]; then
   echo "[04] headless: skipping GUI apps"; exit 0
-fi
-if [ "$OS_TYPE" = "Darwin" ] && [ "$IS_VM" = "yes" ]; then
-  echo "[04] VM: skipping GUI apps"; exit 0
 fi
 
 echo "[04] Apps..."

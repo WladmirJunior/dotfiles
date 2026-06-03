@@ -8,8 +8,9 @@ ARCH="$(uname -m)"
 IS_VM="no"
 if [ "$OS_TYPE" = "Darwin" ]; then
   MODEL_ID=$(system_profiler SPHardwareDataType 2>/dev/null | awk -F': ' '/Model Identifier/ {print $2}')
+  # VirtualMac*: Apple Virtualization.framework (tart, UTM, VirtualBuddy on Apple Silicon).
   case "$MODEL_ID" in
-    VirtualMachine*|VMware*|Parallels*) IS_VM="yes" ;;
+    VirtualMachine*|VirtualMac*|VMware*|Parallels*) IS_VM="yes" ;;
   esac
 elif [ "$OS_TYPE" = "Linux" ]; then
   if command -v systemd-detect-virt >/dev/null 2>&1; then
