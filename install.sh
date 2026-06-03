@@ -11,7 +11,9 @@ set -uo pipefail
 
 REPO_URL="https://github.com/WladmirJunior/dotfiles.git"
 CLONE_DIR="$HOME/.dotfiles"
-PROFILE="${1:-desktop}"
+# Profile may be given explicitly ($1). If omitted, we pick a default AFTER
+# detection (headless hosts default to minimal — no GUI apps to install).
+PROFILE_ARG="${1:-}"
 
 SELF_DIR="$( cd "$( dirname "${BASH_SOURCE[0]:-/dev/null}" )" 2>/dev/null && pwd )"
 if [ -n "$SELF_DIR" ] && [ -d "$SELF_DIR/steps" ] && [ -d "$SELF_DIR/profiles" ]; then
@@ -27,13 +29,26 @@ else
 fi
 export DOTFILES_DIR
 
+source "$DOTFILES_DIR/lib/detect.sh"
+
+# Resolve the profile. An explicit arg always wins. With no arg, the detected
+# environment chooses the default: a headless host (no display) gets `minimal`
+# (GUI apps would be pointless); anything with a display gets `desktop`.
+if [ -n "$PROFILE_ARG" ]; then
+  PROFILE="$PROFILE_ARG"
+elif [ "$HEADLESS" = "yes" ]; then
+  PROFILE="minimal"
+  echo "No profile given and host is headless -> defaulting to 'minimal'."
+else
+  PROFILE="desktop"
+fi
+
 PROFILE_FILE="$DOTFILES_DIR/profiles/$PROFILE"
 if [ ! -f "$PROFILE_FILE" ]; then
   echo "Unknown profile '$PROFILE'. Available: $(ls "$DOTFILES_DIR/profiles" | tr '\n' ' ')"
   exit 1
 fi
 
-source "$DOTFILES_DIR/lib/detect.sh"
 echo "dotfiles | profile: $PROFILE | OS: $OS_TYPE $ARCH | VM: $IS_VM | headless: $HEADLESS | tty: $INTERACTIVE"
 
 while IFS= read -r step; do
