@@ -44,3 +44,5 @@ font-size = 14
 # font-style = extra-bold
 
 # font-thicken = true
+
+keybind = super+v=paste_from_clipboard

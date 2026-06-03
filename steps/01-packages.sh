@@ -12,11 +12,11 @@ if [ "$OS_TYPE" = "Darwin" ]; then
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     eval "$(/opt/homebrew/bin/brew shellenv)"
   fi
-  brew install git neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils
+  brew install git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils
 elif [ "$OS_TYPE" = "Linux" ]; then
   sudo apt update
   sudo apt install -y zsh neovim fzf zoxide eza bat ripgrep fd-find git-delta \
-    nodejs npm curl git tealdeer software-properties-common wget
+    nodejs npm curl git gh tealdeer software-properties-common wget
   mkdir -p ~/.local/bin
   [ -n "$(command -v fdfind 2>/dev/null)" ] && ln -sf "$(command -v fdfind)" ~/.local/bin/fd
   [ -n "$(command -v batcat 2>/dev/null)" ] && ln -sf "$(command -v batcat)" ~/.local/bin/bat
