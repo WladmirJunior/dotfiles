@@ -12,6 +12,11 @@ echo "[04] Apps..."
 if [ "$OS_TYPE" = "Darwin" ]; then
   brew install --cask ghostty font-jetbrains-mono font-monaspace
   brew install duti
+  # Fetch the gum fork (table --width/--border-row) so the installer UI and the
+  # overlays render the summary grid correctly. Best-effort; degrades to stock gum.
+  if [ -f "${DOTFILES_DIR:-.}/lib/ui.sh" ]; then
+    source "${DOTFILES_DIR}/lib/ui.sh"; ui_ensure_gum_fork || true
+  fi
   # 1Password 8 (current) ships via the brew cask from the official site, not the
   # App Store — the App Store only carries the legacy v7.
   if [ ! -d "/Applications/1Password.app" ]; then

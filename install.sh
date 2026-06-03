@@ -6,13 +6,14 @@
 #   curl -fsSL .../install.sh | bash -s -- pentest
 #   ./install.sh [desktop|minimal|pentest]
 #
-# Profiles in profiles/. Steps in steps/. Detection in lib/detect.sh.
+# With no profile arg on an interactive terminal you're asked to pick one.
+# Profiles in profiles/. Steps in steps/. Detection in lib/detect.sh. UI in lib/ui.sh.
 set -uo pipefail
 
 REPO_URL="https://github.com/WladmirJunior/dotfiles.git"
 CLONE_DIR="$HOME/.dotfiles"
-# Profile may be given explicitly ($1). If omitted, we pick a default AFTER
-# detection (headless hosts default to minimal — no GUI apps to install).
+# Profile may be given explicitly ($1). If omitted, we pick one AFTER detection:
+# interactively if there's a tty, else by environment (headless -> minimal).
 PROFILE_ARG="${1:-}"
 
 SELF_DIR="$( cd "$( dirname "${BASH_SOURCE[0]:-/dev/null}" )" 2>/dev/null && pwd )"
@@ -30,6 +31,7 @@ fi
 export DOTFILES_DIR
 
 source "$DOTFILES_DIR/lib/detect.sh"
+source "$DOTFILES_DIR/lib/ui.sh"
 
 # Put Homebrew on PATH for every step. 01-packages may have just installed it, or
 # it may already exist (CI images, re-runs) — either way its shellenv isn't in the
@@ -44,11 +46,27 @@ brew_env() {
 }
 brew_env
 
-# Resolve the profile. An explicit arg always wins. With no arg, the detected
-# environment chooses the default: a headless host (no display) gets `minimal`
-# (GUI apps would be pointless); anything with a display gets `desktop`.
+# Welcome banner.
+if have_gum; then
+  "$GUM" style --border double --border-foreground $THEME_BORDER --padding "1 3" \
+    --margin "1 0 0 $LAYOUT_MARGIN" --align center --width "$(cwidth)" \
+    "$("$GUM" style --foreground $THEME_PRIMARY --bold 'Welcome to the dotfiles setup')" \
+    "Bootstrapping this machine · apps, shell, dotfiles" || true
+fi
+
+# Resolve the profile. An explicit arg always wins. With no arg: ask interactively
+# if there's a tty; otherwise fall back to the environment (headless -> minimal).
 if [ -n "$PROFILE_ARG" ]; then
   PROFILE="$PROFILE_ARG"
+elif [ "$INTERACTIVE" = "yes" ]; then
+  task "Choose what to install"
+  PROFILE="$(choose1 'Profile' \
+    'desktop · full GUI setup' \
+    'minimal · CLI only' \
+    'pentest · CLI + security tools' < /dev/tty)"
+  PROFILE="${PROFILE%% *}"   # keep the first word (desktop/minimal/pentest)
+  PROFILE="${PROFILE:-desktop}"
+  note "→ $PROFILE"
 elif [ "$HEADLESS" = "yes" ]; then
   PROFILE="minimal"
   echo "No profile given and host is headless -> defaulting to 'minimal'."
@@ -62,22 +80,33 @@ if [ ! -f "$PROFILE_FILE" ]; then
   exit 1
 fi
 
-echo "dotfiles | profile: $PROFILE | OS: $OS_TYPE $ARCH | VM: $IS_VM | headless: $HEADLESS | tty: $INTERACTIVE"
+note "profile: $PROFILE · OS: $OS_TYPE $ARCH · VM: $IS_VM · headless: $HEADLESS"
+
+# Count the real steps in the profile up front so headers can read "Step N/total".
+STEP_TOTAL=$(grep -cvE '^\s*(#|$)' "$PROFILE_FILE")
+
+banner "Base setup · public dotfiles"
+
+# step_title 01-packages.sh -> "packages" : strip NN- prefix and .sh, spaces for dashes.
+step_title() { local s="${1#*-}"; s="${s%.sh}"; echo "${s//-/ }"; }
 
 # Read the profile on a dedicated FD (3), not stdin. Under `curl | bash` stdin is
 # the pipe carrying the rest of this script; a step that consumes stdin (e.g. brew)
 # would otherwise eat the loop's input and skip the remaining steps. Steps still
-# inherit the real stdin (FD 0), so interactive ones like git-auth keep working.
+# inherit the real stdin (FD 0), so interactive ones keep working.
+STEP_N=0
 while IFS= read -r step <&3; do
   [ -z "$step" ] && continue
   case "$step" in \#*) continue ;; esac
+  STEP_N=$((STEP_N + 1))
   brew_env   # pick up a brew that an earlier step (01-packages) may have installed
-  echo
-  echo ">> $step"
-  bash "$DOTFILES_DIR/steps/$step" || { echo "step $step failed (rc=$?), continuing"; }
+  step "$STEP_N/$STEP_TOTAL" "$(step_title "$step")"
+  bash "$DOTFILES_DIR/steps/$step" || note "step $step failed (rc=$?), continuing"
 done 3< "$PROFILE_FILE"
 
-echo
-echo "Done (profile: $PROFILE)."
-[ "$OS_TYPE" = "Linux" ] && echo "Restart terminal to use zsh." || echo "Restart terminal."
-echo "To pull in any private overlays, authenticate first: gh auth login --git-protocol https --web"
+ok "Public setup done (profile: $PROFILE)."
+[ "$OS_TYPE" = "Linux" ] && note "Restart terminal to use zsh." || note "Restart terminal."
+
+banner "Next · private overlays"
+note "Authenticate first, then apply any private overlays:"
+note "gh auth login --git-protocol https --web"
