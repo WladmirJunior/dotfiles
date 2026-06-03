@@ -1,5 +1,4 @@
 01-packages.sh
-git-auth.sh
 02-shell.sh
 03-dotfiles.sh
 04-apps.sh
