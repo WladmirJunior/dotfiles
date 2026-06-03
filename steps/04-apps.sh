@@ -12,9 +12,11 @@ echo "[04] Apps..."
 if [ "$OS_TYPE" = "Darwin" ]; then
   brew install --cask ghostty font-jetbrains-mono font-monaspace
   brew install duti
+  # 1Password 8 (current) ships via the brew cask from the official site, not the
+  # App Store — the App Store only carries the legacy v7.
   if [ ! -d "/Applications/1Password.app" ]; then
-    echo "1Password: install from the App Store (opening)..."
-    open "macappstore://apps.apple.com/app/1password-7-password-manager/id1333542190" 2>/dev/null || true
+    echo "1Password..."
+    brew install --cask 1password || echo "  1Password failed"
   fi
 
   # Link Ghostty's config now that the app is installed (03-dotfiles runs before
