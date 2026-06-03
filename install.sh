@@ -51,13 +51,17 @@ fi
 
 echo "dotfiles | profile: $PROFILE | OS: $OS_TYPE $ARCH | VM: $IS_VM | headless: $HEADLESS | tty: $INTERACTIVE"
 
-while IFS= read -r step; do
+# Read the profile on a dedicated FD (3), not stdin. Under `curl | bash` stdin is
+# the pipe carrying the rest of this script; a step that consumes stdin (e.g. brew)
+# would otherwise eat the loop's input and skip the remaining steps. Steps still
+# inherit the real stdin (FD 0), so interactive ones like git-auth keep working.
+while IFS= read -r step <&3; do
   [ -z "$step" ] && continue
   case "$step" in \#*) continue ;; esac
   echo
   echo ">> $step"
   bash "$DOTFILES_DIR/steps/$step" || { echo "step $step failed (rc=$?), continuing"; }
-done < "$PROFILE_FILE"
+done 3< "$PROFILE_FILE"
 
 echo
 echo "Done (profile: $PROFILE)."
