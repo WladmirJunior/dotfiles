@@ -31,6 +31,19 @@ export DOTFILES_DIR
 
 source "$DOTFILES_DIR/lib/detect.sh"
 
+# Put Homebrew on PATH for every step. 01-packages may have just installed it, or
+# it may already exist (CI images, re-runs) — either way its shellenv isn't in the
+# orchestrator's env, so later steps (02-shell, 04-apps) would hit
+# `brew: command not found`. Re-evaluated before each step (see the loop) so a
+# brew installed by 01 is visible to 02+.
+brew_env() {
+  [ "$OS_TYPE" = "Darwin" ] || return 0
+  for brew_bin in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    [ -x "$brew_bin" ] && eval "$("$brew_bin" shellenv)" && return 0
+  done
+}
+brew_env
+
 # Resolve the profile. An explicit arg always wins. With no arg, the detected
 # environment chooses the default: a headless host (no display) gets `minimal`
 # (GUI apps would be pointless); anything with a display gets `desktop`.
@@ -58,6 +71,7 @@ echo "dotfiles | profile: $PROFILE | OS: $OS_TYPE $ARCH | VM: $IS_VM | headless:
 while IFS= read -r step <&3; do
   [ -z "$step" ] && continue
   case "$step" in \#*) continue ;; esac
+  brew_env   # pick up a brew that an earlier step (01-packages) may have installed
   echo
   echo ">> $step"
   bash "$DOTFILES_DIR/steps/$step" || { echo "step $step failed (rc=$?), continuing"; }
