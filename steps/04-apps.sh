@@ -17,6 +17,16 @@ if [ "$OS_TYPE" = "Darwin" ]; then
     open "macappstore://apps.apple.com/app/1password-7-password-manager/id1333542190" 2>/dev/null || true
   fi
 
+  # Link Ghostty's config now that the app is installed (03-dotfiles runs before
+  # this step, so on a first desktop install it couldn't link it yet).
+  if [ -f "$DOTFILES_DIR/config/ghostty/config" ]; then
+    mkdir -p "$HOME/.config/ghostty"
+    ln -sf "$DOTFILES_DIR/config/ghostty/config" "$HOME/.config/ghostty/config"
+    if ! infocmp xterm-ghostty >/dev/null 2>&1 && [ -f "$DOTFILES_DIR/config/ghostty/ghostty.terminfo" ]; then
+      tic -x "$DOTFILES_DIR/config/ghostty/ghostty.terminfo" 2>/dev/null || true
+    fi
+  fi
+
   defaults write com.apple.Terminal "Default Terminal Application" -string "com.mitchellh.ghostty" 2>/dev/null || true
   if ! grep -q "pam_tid" /etc/pam.d/sudo_local 2>/dev/null; then
     echo "auth sufficient pam_tid.so" | sudo tee /etc/pam.d/sudo_local >/dev/null

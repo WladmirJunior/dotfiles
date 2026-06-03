@@ -18,8 +18,11 @@ EOF
 fi
 lnk "$D/config/nvim/init.lua"   "$HOME/.config/nvim/init.lua"
 
-# ghostty config + terminfo (desktop only or if ghostty is already installed)
-if { [ "$OS_TYPE" = "Darwin" ] && [ "$IS_VM" = "no" ]; } || [ -d ~/.config/ghostty ]; then
+# ghostty config + terminfo. Link it whenever Ghostty is installed (or its config
+# dir already exists) — don't gate on IS_VM: a desktop-profile VM with a UI gets
+# Ghostty too. 04-apps (desktop profile) installs Ghostty before this matters on
+# reruns; on first run the app may not be present yet, so also accept the dir.
+if [ -d /Applications/Ghostty.app ] || command -v ghostty >/dev/null 2>&1 || [ -d ~/.config/ghostty ]; then
   lnk "$D/config/ghostty/config" "$HOME/.config/ghostty/config"
   if ! infocmp xterm-ghostty >/dev/null 2>&1 && [ -f "$D/config/ghostty/ghostty.terminfo" ]; then
     sudo tic -x "$D/config/ghostty/ghostty.terminfo" 2>/dev/null || tic -x "$D/config/ghostty/ghostty.terminfo" 2>/dev/null || true
