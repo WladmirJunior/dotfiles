@@ -80,3 +80,4 @@ done 3< "$PROFILE_FILE"
 echo
 echo "Done (profile: $PROFILE)."
 [ "$OS_TYPE" = "Linux" ] && echo "Restart terminal to use zsh." || echo "Restart terminal."
+echo "To pull in any private overlays, authenticate first: gh auth login --git-protocol https --web"
