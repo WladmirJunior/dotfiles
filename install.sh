@@ -97,9 +97,10 @@ banner "Base setup · public dotfiles"
 step_title() { local s="${1#*-}"; s="${s%.sh}"; echo "${s//-/ }"; }
 
 # Read the profile on a dedicated FD (3), not stdin. Under `curl | bash` stdin is
-# the pipe carrying the rest of this script; a step that consumes stdin (e.g. brew)
-# would otherwise eat the loop's input and skip the remaining steps. Steps still
-# inherit the real stdin (FD 0), so interactive ones keep working.
+# the pipe carrying the rest of this script; a step that consumes stdin (e.g. brew
+# installing a cask) would otherwise drain it and bash would hit EOF after the
+# loop, skipping the closing banner. Each step runs with stdin from /dev/null so it
+# can't touch the pipe; interactive steps read /dev/tty directly, not stdin.
 STEP_N=0
 while IFS= read -r step <&3; do
   [ -z "$step" ] && continue
@@ -107,7 +108,7 @@ while IFS= read -r step <&3; do
   STEP_N=$((STEP_N + 1))
   brew_env   # pick up a brew that an earlier step (01-packages) may have installed
   step "$STEP_N/$STEP_TOTAL" "$(step_title "$step")"
-  bash "$DOTFILES_DIR/steps/$step" || note "step $step failed (rc=$?), continuing"
+  bash "$DOTFILES_DIR/steps/$step" </dev/null || note "step $step failed (rc=$?), continuing"
 done 3< "$PROFILE_FILE"
 
 ok "Public setup done (profile: $PROFILE)."
