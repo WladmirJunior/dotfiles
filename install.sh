@@ -112,8 +112,59 @@ while IFS= read -r step <&3; do
 done 3< "$PROFILE_FILE"
 
 ok "Public setup done (profile: $PROFILE)."
-[ "$OS_TYPE" = "Linux" ] && note "Restart terminal to use zsh." || note "Restart terminal."
 
-banner "Next · private overlays"
-note "Authenticate first, then apply any private overlays:"
-note "gh auth login --git-protocol https --web"
+# -----------------------------------------------------------------------------
+#  Connect & authenticate (opt-in) — wire up the 1Password SSH agent + GitHub CLI
+#  so private overlays can be fetched. Generic: only ever names 1Password/GitHub,
+#  never any private repo. macOS only (1Password app + op CLI).
+# -----------------------------------------------------------------------------
+OP_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+ZLOCAL="$HOME/.zshrc.local"   # machine-local overlay sourced by the thin ~/.zshrc
+
+# append_once FILE MARKER LINE: add LINE to FILE only if MARKER not already there.
+append_once() {
+  local f="$1" marker="$2" line="$3"
+  mkdir -p "$(dirname "$f")"; touch "$f"
+  grep -qF "$marker" "$f" 2>/dev/null || printf '%s\n' "$line" >> "$f"
+}
+
+if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
+  banner "Connect & authenticate · 1Password, GitHub, SSH"
+
+  task "1Password · connect (one time)"
+  open -a "1Password" 2>/dev/null || note "open 1Password manually"
+  note "In the 1Password app:"
+  note "1. Sign in to your 1Password account"
+  note "2. Settings > Developer > enable \"Use the SSH agent\""
+  note "3. Settings > Developer > enable \"Integrate with 1Password CLI\""
+  confirm "Done? Continue" || true
+
+  task "SSH agent · 1Password"
+  export SSH_AUTH_SOCK="$OP_SOCK"
+  append_once "$ZLOCAL" "2BUA8C4S2C.com.1password/t/agent.sock" \
+    'export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"'
+  # ~/.ssh/config IdentityAgent so GUI apps (not just the shell) use the agent.
+  append_once "$HOME/.ssh/config" "IdentityAgent \"$OP_SOCK\"" \
+    "$(printf 'Host *\n  IdentityAgent "%s"' "$OP_SOCK")"
+  chmod 600 "$HOME/.ssh/config" 2>/dev/null || true
+  ok "SSH uses the 1Password agent (Touch ID per use)"
+
+  task "GitHub CLI · 1Password shell plugin"
+  if command -v op >/dev/null 2>&1; then
+    op plugin init gh </dev/tty || note "op plugin init gh did not complete"
+    append_once "$ZLOCAL" 'op/plugins.sh' \
+      '[ -f "$HOME/.config/op/plugins.sh" ] && source "$HOME/.config/op/plugins.sh"'
+    rm -f "$HOME/.config/gh/hosts.yml" 2>/dev/null || true   # no on-disk gh creds
+    ok "gh authenticates from 1Password (Touch ID per command)"
+  else
+    note "op CLI not found — skipping gh plugin (it ships with the 1Password cask)"
+  fi
+
+  banner "Next · private overlays"
+  note "Fetch and apply your private overlays (repo names come from 1Password):"
+  note 'op read "op://Personal/dotfiles-bootstrap/bootstrap_script" | bash'
+else
+  [ "$OS_TYPE" = "Darwin" ] && note "Skipped authentication. Run it later from the 1Password handoff."
+fi
+
+note "Reload your shell to pick up the new config:  exec zsh"
