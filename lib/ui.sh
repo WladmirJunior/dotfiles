@@ -71,7 +71,9 @@ ui_ensure_gum_fork() {
 ui_bootstrap_gum() {
   command -v gum >/dev/null 2>&1 && { ui_ensure_gum_fork; return 0; }
   if command -v brew >/dev/null 2>&1; then
-    brew install gum >/dev/null 2>&1 || true
+    # </dev/null: under `curl | bash` stdin is the script pipe; brew would
+    # otherwise drain it and bash hits EOF mid-script, exiting silently.
+    brew install gum >/dev/null 2>&1 </dev/null || true
   fi
   # On Apple Silicon, the fork binary is a brew-free fallback (and gives the
   # table extras anyway). Other platforms rely on brew/apt from step 01.
