@@ -69,7 +69,7 @@ elif [ -r /dev/tty ] && [ "$HEADLESS" != "yes" ]; then
   PROFILE="$(choose1 'Profile' \
     'desktop · full GUI setup' \
     'minimal · CLI only' \
-    'pentest · CLI + security tools' < /dev/tty)"
+    'pentest · CLI + security tools')"
   PROFILE="${PROFILE%% *}"   # keep the first word (desktop/minimal/pentest)
   PROFILE="${PROFILE:-desktop}"
   note "→ $PROFILE"

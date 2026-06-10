@@ -171,11 +171,13 @@ spin() {
 #  PROMPT HELPERS  — gum choose/confirm have no --margin, so we left-pad the
 #                    header, cursor and item prefixes to line up with the UI.
 #                    Fall back to the first option / plain read with no gum.
+#  All read from /dev/tty so they work under `curl | bash`, where stdin is the
+#  script pipe (gum would otherwise get no keyboard and return immediately).
 # -----------------------------------------------------------------------------
 choose1() {  # choose1 "Header" opt...  → single choice (echoes the picked option)
   local h="$1"; shift
   if have_gum; then "$GUM" choose --header="${PAD}$h  (↑↓ move · enter select)" \
-      --cursor="${PAD}> " --cursor.foreground=$THEME_ACCENT --header.foreground=$THEME_PRIMARY "$@"
+      --cursor="${PAD}> " --cursor.foreground=$THEME_ACCENT --header.foreground=$THEME_PRIMARY "$@" </dev/tty
   else echo "$1"; fi
 }
 pick() {  # pick "Header" opt...  → multi choice ([ ]/[x]); comma-joined or 'none'
@@ -184,14 +186,14 @@ pick() {  # pick "Header" opt...  → multi choice ([ ]/[x]); comma-joined or 'n
     local out; out=$("$GUM" choose --no-limit --header="${PAD}$h  (space select · enter confirm)" \
       --cursor="${PAD}> " --cursor.foreground=$THEME_ACCENT --header.foreground=$THEME_PRIMARY \
       --selected.foreground=$THEME_SUCCESS \
-      --cursor-prefix="${PAD}[ ] " --unselected-prefix="${PAD}[ ] " --selected-prefix="${PAD}[x] " "$@")
+      --cursor-prefix="${PAD}[ ] " --unselected-prefix="${PAD}[ ] " --selected-prefix="${PAD}[x] " "$@" </dev/tty)
     [ -z "$out" ] && { echo none; return; }; echo "$out" | paste -sd, -
   else echo none; fi
 }
 confirm() {  # confirm "Question"  → exit status (yes=0)
   local q="$1"
   if have_gum; then "$GUM" confirm "$q" --padding "0 0 0 $LAYOUT_MARGIN" \
-      --prompt.foreground=$THEME_PRIMARY --selected.background=$THEME_BORDER --selected.foreground=232
+      --prompt.foreground=$THEME_PRIMARY --selected.background=$THEME_BORDER --selected.foreground=232 </dev/tty
   else printf '%s%s [y/N] ' "$PAD" "$q"; read -r a </dev/tty 2>/dev/null; [ "$a" = y ]; fi
 }
 
