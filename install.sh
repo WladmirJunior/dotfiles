@@ -177,9 +177,25 @@ if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
   fi
 
   banner "Next · private overlays"
-  note "Reload your shell, then run this to fetch & apply your private overlays:"
-  info 'exec zsh'
-  info 'op read "op://Personal/dotfiles-bootstrap/bootstrap_script" | bash'
+  # The bootstrap script lives in the 1Password Secure Note (no private repo names
+  # in this public repo). We can run it right here: SSH_AUTH_SOCK is already
+  # exported and the op gh plugin is sourced into this session below — so there's
+  # nothing to reload first.
+  BOOTSTRAP='op://Personal/dotfiles-bootstrap/bootstrap_script'
+  if command -v op >/dev/null 2>&1 && confirm "Apply private overlays now?"; then
+    # Load the op gh plugin alias into THIS session so the bootstrap's gh calls
+    # authenticate via 1Password without a shell reload.
+    [ -f "$HOME/.config/op/plugins.sh" ] && source "$HOME/.config/op/plugins.sh"
+    note "fetching bootstrap from 1Password and applying overlays..."
+    if ! op read "$BOOTSTRAP" 2>/dev/null | bash; then
+      note "bootstrap did not complete — run it manually:"
+      info "op read \"$BOOTSTRAP\" | bash"
+    fi
+  else
+    note "Apply your private overlays later with:"
+    info "op read \"$BOOTSTRAP\" | bash"
+    note "(reload the shell first if gh isn't authenticated yet: exec zsh)"
+  fi
 else
   [ "$OS_TYPE" = "Darwin" ] && info "Skipped authentication. Run it later from the 1Password handoff."
   [ "$OS_TYPE" = "Linux" ] && info "Restart your terminal to use zsh."
