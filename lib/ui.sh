@@ -50,7 +50,7 @@ UI_GUM_FORK_BIN="$UI_GUM_FORK_DIR/gum"
 UI_GUM_FORK_URL="https://github.com/WladmirJunior/gum/releases/download/v0.17.0-borderrow/gum-darwin-arm64"
 
 # ui_ensure_gum_fork: fetch the fork binary once (darwin-arm64 only). Best-effort
-# — a failure just means summary_table falls back to the stock-gum awk path.
+# — a failure just means the table helper uses stock gum (no --width/--border-row).
 ui_ensure_gum_fork() {
   [ "$(uname)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ] || return 0
   [ -x "$UI_GUM_FORK_BIN" ] && return 0
@@ -61,6 +61,21 @@ ui_ensure_gum_fork() {
   else
     rm -f "$UI_GUM_FORK_BIN" 2>/dev/null || true
   fi
+}
+
+# ui_bootstrap_gum: make `gum` available before the first UI prompt. The
+# installer sources this file before step 01 (which installs gum), so on a clean
+# machine the early banners/prompts would otherwise render in the plain-printf
+# fallback. Install gum now — via brew if present, else the prebuilt fork binary
+# (needs no brew). Best-effort; the helpers degrade gracefully if it fails.
+ui_bootstrap_gum() {
+  command -v gum >/dev/null 2>&1 && { ui_ensure_gum_fork; return 0; }
+  if command -v brew >/dev/null 2>&1; then
+    brew install gum >/dev/null 2>&1 || true
+  fi
+  # On Apple Silicon, the fork binary is a brew-free fallback (and gives the
+  # table extras anyway). Other platforms rely on brew/apt from step 01.
+  ui_ensure_gum_fork
 }
 
 # -----------------------------------------------------------------------------
@@ -75,10 +90,17 @@ else
   c_primary=; c_success=; c_log=; c_bold=; c_dim=; c_reset=
 fi
 
-# Prefer the forked gum (table --width / --border-row); else the gum on PATH.
-if [ -x "$UI_GUM_FORK_BIN" ]; then GUM="$UI_GUM_FORK_BIN"
-else GUM=gum; fi
-have_gum()      { command -v "$GUM" >/dev/null 2>&1 || [ -x "$GUM" ]; }
+# Resolve which gum binary to use, preferring the fork (table --width/--border-row).
+# Done lazily on every have_gum() call (not once at source time) because the
+# installer may install gum / fetch the fork AFTER this file is sourced — the
+# next helper call then picks it up automatically. GUM defaults to plain `gum`.
+GUM=gum
+have_gum() {
+  if [ -x "$UI_GUM_FORK_BIN" ]; then GUM="$UI_GUM_FORK_BIN"
+  elif command -v gum >/dev/null 2>&1; then GUM=gum
+  else return 1; fi
+  return 0
+}
 gum_has_width() { "$GUM" table --help 2>&1 | grep -q -- '--width'; }   # fork only
 
 # Inner content width = (capped) terminal width minus the left+right margins.

@@ -46,6 +46,10 @@ brew_env() {
 }
 brew_env
 
+# Make gum available before the first prompt/banner so the UI renders richly even
+# on a clean machine (step 01 also installs gum, but that runs after this point).
+ui_bootstrap_gum
+
 # Welcome banner.
 if have_gum; then
   "$GUM" style --border double --border-foreground $THEME_BORDER --padding "1 3" \
@@ -55,10 +59,12 @@ if have_gum; then
 fi
 
 # Resolve the profile. An explicit arg always wins. With no arg: ask interactively
-# if there's a tty; otherwise fall back to the environment (headless -> minimal).
+# when a real terminal is reachable, else fall back by environment (headless ->
+# minimal). We test /dev/tty rather than FD 0 because under `curl | bash` stdin is
+# the script pipe, not the keyboard — but /dev/tty still reaches the terminal.
 if [ -n "$PROFILE_ARG" ]; then
   PROFILE="$PROFILE_ARG"
-elif [ "$INTERACTIVE" = "yes" ]; then
+elif [ -r /dev/tty ] && [ "$HEADLESS" != "yes" ]; then
   task "Choose what to install"
   PROFILE="$(choose1 'Profile' \
     'desktop · full GUI setup' \
