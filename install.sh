@@ -131,7 +131,14 @@ append_once() {
 if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
   banner "Connect & authenticate · 1Password, GitHub, SSH"
 
-  task "1Password · connect (one time)"
+  task "1Password · install & connect (one time)"
+  # 1Password 8 ships via the brew cask from the official site (the App Store only
+  # has the legacy v7). Installed here, not in the base setup, so a machine that
+  # opts out of auth never pulls the 198MB cask.
+  if [ ! -d "/Applications/1Password.app" ]; then
+    spin "installing 1Password" -- brew install --cask 1password </dev/null \
+      || note "1Password install failed — install it manually"
+  fi
   open -a "1Password" 2>/dev/null || note "open 1Password manually"
   note "In the 1Password app:"
   note "1. Sign in to your 1Password account"
@@ -150,6 +157,11 @@ if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
   ok "SSH uses the 1Password agent (Touch ID per use)"
 
   task "GitHub CLI · 1Password shell plugin"
+  # The op CLI is a separate cask from the desktop app; install it if missing.
+  if ! command -v op >/dev/null 2>&1; then
+    spin "installing 1Password CLI" -- brew install --cask 1password-cli </dev/null || true
+    brew_env
+  fi
   if command -v op >/dev/null 2>&1; then
     op plugin init gh </dev/tty || note "op plugin init gh did not complete"
     append_once "$ZLOCAL" 'op/plugins.sh' \
@@ -157,7 +169,7 @@ if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
     rm -f "$HOME/.config/gh/hosts.yml" 2>/dev/null || true   # no on-disk gh creds
     ok "gh authenticates from 1Password (Touch ID per command)"
   else
-    note "op CLI not found — skipping gh plugin (it ships with the 1Password cask)"
+    note "1Password CLI unavailable — run 'op plugin init gh' after installing it"
   fi
 
   banner "Next · private overlays"

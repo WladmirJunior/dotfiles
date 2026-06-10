@@ -16,10 +16,11 @@ The installer detects the host (physical Mac, Mac VM, or Linux/VM) and skips GUI
 
 **Mac apps installed by default (physical Mac only):**
 - Ghostty (terminal)
-- 1Password (App Store opens automatically if missing)
-- Fonts: JetBrains Mono, Monaspace
-- duti (default app helper)
+- Font: JetBrains Mono
 - Touch ID for sudo (pam_tid)
+
+1Password (+ the `op` CLI) is installed only if you opt into the authentication
+step at the end of the install.
 
 **Configs:**
 - `config/zsh/zshrc`: ZSH with aliases, prompt, history, modern unix tool replacements
