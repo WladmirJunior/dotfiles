@@ -139,7 +139,9 @@ if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
     spin "installing 1Password" -- brew install --cask 1password </dev/null \
       || note "1Password install failed — install it manually"
   fi
-  open -a "1Password" 2>/dev/null || note "open 1Password manually"
+  # open by path, not by name: LaunchServices may not have indexed the just-moved
+  # app yet, so `open -a "1Password"` can fail right after install.
+  open /Applications/1Password.app 2>/dev/null || note "open 1Password manually"
   note "In the 1Password app:"
   note "1. Sign in to your 1Password account"
   note "2. Settings > Developer > enable \"Use the SSH agent\""
@@ -164,19 +166,22 @@ if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
   fi
   if command -v op >/dev/null 2>&1; then
     op plugin init gh </dev/tty || note "op plugin init gh did not complete"
+    # op prints a manual "echo source ... >> ~/.zshrc" hint — we've already wired
+    # the source into ~/.zshrc.local, so that hint can be ignored.
     append_once "$ZLOCAL" 'op/plugins.sh' \
       '[ -f "$HOME/.config/op/plugins.sh" ] && source "$HOME/.config/op/plugins.sh"'
     rm -f "$HOME/.config/gh/hosts.yml" 2>/dev/null || true   # no on-disk gh creds
-    ok "gh authenticates from 1Password (Touch ID per command)"
+    ok "gh plugin wired into ~/.zshrc.local (ignore op's echo hint above)"
   else
     note "1Password CLI unavailable — run 'op plugin init gh' after installing it"
   fi
 
   banner "Next · private overlays"
-  note "Fetch and apply your private overlays (repo names come from 1Password):"
+  note "Reload your shell, then run this to fetch & apply your private overlays:"
+  info 'exec zsh'
   info 'op read "op://Personal/dotfiles-bootstrap/bootstrap_script" | bash'
 else
   [ "$OS_TYPE" = "Darwin" ] && info "Skipped authentication. Run it later from the 1Password handoff."
+  [ "$OS_TYPE" = "Linux" ] && info "Restart your terminal to use zsh."
+  [ "$OS_TYPE" = "Darwin" ] && info "Reload your shell to pick up the new config:  exec zsh"
 fi
-
-info "Reload your shell to pick up the new config:  exec zsh"
