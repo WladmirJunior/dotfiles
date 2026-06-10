@@ -39,45 +39,56 @@ THEME_SPINNER=51        # loading spinner (gum spin)
 LAYOUT_MARGIN=2         # left margin so nothing hugs the terminal edge
 LAYOUT_MAXWIDTH=90      # cap the UI width on very wide terminals
 
+# =============================================================================
+#  GUM SOURCE  — single source of truth for which gum we run.
 # -----------------------------------------------------------------------------
-#  GUM FORK  — the table helper needs --width / --border-row, which upstream gum
-#  doesn't expose yet (PR charmbracelet/gum#1084). Until that merges we ship a
-#  small fork binary to a Santa-allowed path and prefer it; everything else
-#  works with stock gum too.
-# -----------------------------------------------------------------------------
-UI_GUM_FORK_DIR="/opt/homebrew/var/gum-fork"
-UI_GUM_FORK_BIN="$UI_GUM_FORK_DIR/gum"
-UI_GUM_FORK_URL="https://github.com/WladmirJunior/gum/releases/download/v0.17.0-borderrow/gum-darwin-arm64"
+#  The table helper needs --width / --border-row, which upstream gum doesn't
+#  expose yet (PR charmbracelet/gum#1084). Until that merges we run a fork built
+#  from that PR, fetched as a prebuilt binary to a Santa-allowed path.
+#
+#  TO SWITCH TO UPSTREAM once the PR lands: set UI_GUM_USE_FORK=0 below. Nothing
+#  else changes — ui_bootstrap_gum then just relies on stock gum (brew/apt), and
+#  the table helper auto-detects whether --width is available.
+# =============================================================================
+UI_GUM_USE_FORK=1                                  # 1 = fork binary, 0 = stock gum
+UI_GUM_REPO="WladmirJunior/gum"
+UI_GUM_TAG="v0.17.0-borderrow"
+UI_GUM_DIR="/opt/homebrew/var/gum-fork"            # Santa-allowed install path
+UI_GUM_BIN="$UI_GUM_DIR/gum"
 
-# ui_ensure_gum_fork: fetch the fork binary once (darwin-arm64 only). Best-effort
-# — a failure just means the table helper uses stock gum (no --width/--border-row).
-ui_ensure_gum_fork() {
-  [ "$(uname)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ] || return 0
-  [ -x "$UI_GUM_FORK_BIN" ] && return 0
+# ui_gum_asset: the release asset name for this platform, or "" if unsupported.
+# The fork ships gum-<os>-<arch> binaries (darwin-arm64, linux-arm64).
+ui_gum_asset() {
+  case "$(uname)-$(uname -m)" in
+    Darwin-arm64) echo "gum-darwin-arm64" ;;
+    Linux-aarch64|Linux-arm64) echo "gum-linux-arm64" ;;
+    *) echo "" ;;
+  esac
+}
+
+# ui_ensure_gum: fetch the fork binary once for this platform. Best-effort — a
+# failure just means the helpers use whatever `gum` is on PATH (no fork extras).
+ui_ensure_gum() {
+  [ "$UI_GUM_USE_FORK" = 1 ] || return 0
+  [ -x "$UI_GUM_BIN" ] && return 0
+  local asset; asset="$(ui_gum_asset)"; [ -n "$asset" ] || return 0
   command -v curl >/dev/null 2>&1 || return 0
-  mkdir -p "$UI_GUM_FORK_DIR" 2>/dev/null || return 0
-  if curl -fsSL "$UI_GUM_FORK_URL" -o "$UI_GUM_FORK_BIN" 2>/dev/null; then
-    chmod +x "$UI_GUM_FORK_BIN" 2>/dev/null || true
+  mkdir -p "$UI_GUM_DIR" 2>/dev/null || return 0
+  local url="https://github.com/$UI_GUM_REPO/releases/download/$UI_GUM_TAG/$asset"
+  if curl -fsSL "$url" -o "$UI_GUM_BIN" 2>/dev/null; then
+    chmod +x "$UI_GUM_BIN" 2>/dev/null || true
   else
-    rm -f "$UI_GUM_FORK_BIN" 2>/dev/null || true
+    rm -f "$UI_GUM_BIN" 2>/dev/null || true
   fi
 }
 
-# ui_bootstrap_gum: make `gum` available before the first UI prompt. The
-# installer sources this file before step 01 (which installs gum), so on a clean
-# machine the early banners/prompts would otherwise render in the plain-printf
-# fallback. Install gum now — via brew if present, else the prebuilt fork binary
-# (needs no brew). Best-effort; the helpers degrade gracefully if it fails.
+# ui_bootstrap_gum: make gum available before the first UI prompt. Sourced before
+# any step runs, so on a clean machine the early banner/prompt would otherwise
+# render in the plain-printf fallback. With the fork enabled this just fetches the
+# fork binary; with the fork disabled it leaves stock gum (installed by step 01)
+# to the helpers. Best-effort; everything degrades gracefully if it fails.
 ui_bootstrap_gum() {
-  command -v gum >/dev/null 2>&1 && { ui_ensure_gum_fork; return 0; }
-  if command -v brew >/dev/null 2>&1; then
-    # </dev/null: under `curl | bash` stdin is the script pipe; brew would
-    # otherwise drain it and bash hits EOF mid-script, exiting silently.
-    brew install gum >/dev/null 2>&1 </dev/null || true
-  fi
-  # On Apple Silicon, the fork binary is a brew-free fallback (and gives the
-  # table extras anyway). Other platforms rely on brew/apt from step 01.
-  ui_ensure_gum_fork
+  ui_ensure_gum
 }
 
 # -----------------------------------------------------------------------------
@@ -92,13 +103,13 @@ else
   c_primary=; c_success=; c_log=; c_bold=; c_dim=; c_reset=
 fi
 
-# Resolve which gum binary to use, preferring the fork (table --width/--border-row).
-# Done lazily on every have_gum() call (not once at source time) because the
-# installer may install gum / fetch the fork AFTER this file is sourced — the
-# next helper call then picks it up automatically. GUM defaults to plain `gum`.
+# Resolve which gum binary to use, preferring the fork at UI_GUM_BIN. Done lazily
+# on every have_gum() call (not once at source time) because ui_bootstrap_gum may
+# fetch the fork AFTER this file is sourced — the next helper call then picks it
+# up automatically. GUM defaults to plain `gum`.
 GUM=gum
 have_gum() {
-  if [ -x "$UI_GUM_FORK_BIN" ]; then GUM="$UI_GUM_FORK_BIN"
+  if [ -x "$UI_GUM_BIN" ]; then GUM="$UI_GUM_BIN"
   elif command -v gum >/dev/null 2>&1; then GUM=gum
   else return 1; fi
   return 0

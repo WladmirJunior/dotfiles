@@ -46,8 +46,8 @@ brew_env() {
 }
 brew_env
 
-# Make gum available before the first prompt/banner so the UI renders richly even
-# on a clean machine (step 01 also installs gum, but that runs after this point).
+# Fetch the gum fork before the first prompt/banner so the UI renders richly even
+# on a clean machine. Single source of truth for the gum binary lives in lib/ui.sh.
 ui_bootstrap_gum
 
 # Welcome banner.
