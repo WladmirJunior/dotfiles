@@ -96,11 +96,15 @@ ui_bootstrap_gum() {
 # -----------------------------------------------------------------------------
 PAD="$(printf '%*s' "$LAYOUT_MARGIN" '')"   # left-margin spaces
 # shellcheck disable=SC2034  # c_dim/c_bold are part of the shared color API
+# c_log is a mid grey (250), not bright-black (90) — the latter vanishes on the
+# dark terminal backgrounds these installers run in. c_info is a soft cyan for
+# closing messages the user needs to actually read.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-  c_primary=$'\033[36m'; c_success=$'\033[32m'; c_log=$'\033[90m'
+  c_primary=$'\033[36m'; c_success=$'\033[32m'; c_log=$'\033[38;5;250m'
+  c_info=$'\033[38;5;45m'
   c_bold=$'\033[1m'; c_dim=$'\033[2m'; c_reset=$'\033[0m'
 else
-  c_primary=; c_success=; c_log=; c_bold=; c_dim=; c_reset=
+  c_primary=; c_success=; c_log=; c_info=; c_bold=; c_dim=; c_reset=
 fi
 
 # Resolve which gum binary to use, preferring the fork at UI_GUM_BIN. Done lazily
@@ -148,6 +152,8 @@ _stepbox() {  # shared rounded box for step()/task()
 ok()   { if have_gum; then printf '%s' "$PAD"; "$GUM" style --foreground $THEME_SUCCESS "✓ $1"
          else printf '%s%s✓ %s%s\n' "$PAD" "$c_success" "$1" "$c_reset"; fi; }
 note() { printf '%s%s   %s%s\n' "$PAD" "$c_log" "$1" "$c_reset"; }
+# info: a closing/next-step message the user must read (brighter than note()).
+info() { printf '%s%s   %s%s\n' "$PAD" "$c_info" "$1" "$c_reset"; }
 
 # spin "title" [-- cmd args...]  — run cmd under a spinner (or sleep if no cmd).
 # FAST=1 or no gum → just print the title and run the cmd plainly.

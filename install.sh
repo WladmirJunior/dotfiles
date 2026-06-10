@@ -174,9 +174,9 @@ if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
 
   banner "Next · private overlays"
   note "Fetch and apply your private overlays (repo names come from 1Password):"
-  note 'op read "op://Personal/dotfiles-bootstrap/bootstrap_script" | bash'
+  info 'op read "op://Personal/dotfiles-bootstrap/bootstrap_script" | bash'
 else
-  [ "$OS_TYPE" = "Darwin" ] && note "Skipped authentication. Run it later from the 1Password handoff."
+  [ "$OS_TYPE" = "Darwin" ] && info "Skipped authentication. Run it later from the 1Password handoff."
 fi
 
-note "Reload your shell to pick up the new config:  exec zsh"
+info "Reload your shell to pick up the new config:  exec zsh"
