@@ -10,7 +10,7 @@ set -uo pipefail
 echo "[04] Apps..."
 
 if [ "$OS_TYPE" = "Darwin" ]; then
-  brew install --cask ghostty font-jetbrains-mono font-monaspace
+  brew install --cask ghostty font-jetbrains-mono
   brew install duti
   # 1Password 8 (current) ships via the brew cask from the official site, not the
   # App Store — the App Store only carries the legacy v7.
