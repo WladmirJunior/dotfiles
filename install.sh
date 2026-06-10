@@ -146,6 +146,8 @@ if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
   note "1. Sign in to your 1Password account"
   note "2. Settings > Developer > enable \"Use the SSH agent\""
   note "3. Settings > Developer > enable \"Integrate with 1Password CLI\""
+  note "   (if a \"Set Up SSH Agent\" popup offers to edit ~/.ssh/config, just"
+  note "    close it — this script writes that config for you)"
   confirm "Done? Continue" || true
 
   task "SSH agent · 1Password"
@@ -153,7 +155,9 @@ if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
   append_once "$ZLOCAL" "2BUA8C4S2C.com.1password/t/agent.sock" \
     'export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"'
   # ~/.ssh/config IdentityAgent so GUI apps (not just the shell) use the agent.
-  append_once "$HOME/.ssh/config" "IdentityAgent \"$OP_SOCK\"" \
+  # Match on the agent-socket fragment (not the exact line) so we don't duplicate
+  # a block 1Password may have written itself via its "Edit Automatically" popup.
+  append_once "$HOME/.ssh/config" "2BUA8C4S2C.com.1password/t/agent.sock" \
     "$(printf 'Host *\n  IdentityAgent "%s"' "$OP_SOCK")"
   chmod 600 "$HOME/.ssh/config" 2>/dev/null || true
   ok "SSH uses the 1Password agent (Touch ID per use)"
