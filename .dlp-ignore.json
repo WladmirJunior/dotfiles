@@ -1,0 +1,7 @@
+[
+    {
+        "path": "lib/template.sh",
+        "policy": "EmailPolicy",
+        "justification": "GitHub noreply email used as documented default fallback in template, not a personal address"
+    }
+]

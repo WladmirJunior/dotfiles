@@ -61,12 +61,49 @@ curl -fsSL .../install.sh | bash -s -- pentest
 ```bash
 ./install.sh --dry-run minimal   # announce every action, change nothing (like terraform plan)
 ./install.sh -n minimal          # short form of --dry-run
+./install.sh --plan minimal      # like --dry-run but ends with a categorized summary
+./install.sh -p minimal          # short form of --plan
 ./install.sh --check             # verify-only: symlinks resolve, core tools on PATH, no steps run
 ```
 
 A normal install runs the verification automatically as its last step. `--dry-run`
 wraps every state-changing command (symlinks, copies, package installs, `defaults
 write`) so you can preview a run on a fresh machine before committing to it.
+
+`--plan` is `--dry-run` plus a final summary: create/update/replace/install/skip
+counts and a per-item list, color-coded. Use it to review what would change
+before applying.
+
+### Templates
+
+`config/**/*.tmpl` files are rendered with environment-specific values at install
+time, removing the need to keep three near-identical copies across the public /
+private / nu repos. See `lib/template.sh`:
+
+```
+${VAR}                    expand env var
+${VAR:-default}           expand with fallback
+${OP:op://Personal/...}   read secret from 1Password
+# @if IS_WORK_MAC         conditional block (truthy)
+# @if FOO == "value"      conditional block (equality)
+# @endif                  end block
+# @include path/file.tmpl include another template
+```
+
+Standard vars: `OS_TYPE`, `ARCH`, `IS_VM`, `HEADLESS`, `IS_WORK_MAC`,
+`HOST_SHORT`, `GIT_NAME`, `GIT_EMAIL`. Set in `lib/detect.sh` /
+`lib/template.sh::detect_template`.
+
+### Sync across machines
+
+`scripts/dotfiles-sync.sh` keeps the synchronized repo set (`.dotfiles`,
+`.***REMOVED***`, `.***REMOVED***` on work mac, `~/dev/sonus`) in step:
+
+```bash
+./scripts/dotfiles-sync.sh --status   # ahead/behind/dirty per repo
+./scripts/dotfiles-sync.sh --pull     # pull --ff-only on every repo
+./scripts/dotfiles-sync.sh            # interactive: pull, then prompt-per-repo commit & push
+```
 
 ### Provision a fresh VM
 

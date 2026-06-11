@@ -1,0 +1,17 @@
+[user]
+    name = ${GIT_NAME}
+    email = ${GIT_EMAIL}
+
+# @if IS_WORK_MAC
+[url "git@github.com:nubank/"]
+    insteadOf = https://github.com/nubank/
+[commit]
+    gpgsign = false
+# @endif
+
+# @if IS_WORK_MAC == "0"
+[push]
+    autoSetupRemote = true
+[pull]
+    rebase = true
+# @endif
