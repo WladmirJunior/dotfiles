@@ -64,7 +64,15 @@ REPOS=(
   "$HOME/.***REMOVED***"
 )
 [ "$IS_WORK_MAC" = 1 ] && REPOS+=("$HOME/.***REMOVED***")
-REPOS+=("$HOME/dev/sonus")
+
+# sonus lives in different paths per machine: corp keeps it under ~/dev/sonus,
+# personal mac uses ~/sonus. Prefer the first one that exists.
+for sonus_path in "$HOME/dev/sonus" "$HOME/sonus"; do
+  if [ -d "$sonus_path/.git" ]; then
+    REPOS+=("$sonus_path")
+    break
+  fi
+done
 
 run() {
   if [ "$DRY" = 1 ]; then
