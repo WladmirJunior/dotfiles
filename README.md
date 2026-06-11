@@ -68,11 +68,26 @@ A normal install runs the verification automatically as its last step. `--dry-ru
 wraps every state-changing command (symlinks, copies, package installs, `defaults
 write`) so you can preview a run on a fresh machine before committing to it.
 
+### Provision a fresh VM
+
+One command clones a VM and provisions it with these dotfiles:
+
+```bash
+scripts/provision-vm.sh --profile minimal              # macOS tart VM, via tart exec
+scripts/provision-vm.sh --dry-run                       # preview, create nothing
+```
+
+For Linux VMs, `config/cloud-init/` has first-boot seeds (`user-data.arch`,
+`user-data.kali`) — the Linux equivalent of the tart-exec flow. See
+`config/cloud-init/README.md`.
+
 ### Architecture
 
 - `install.sh`: orchestrator. Detects environment, reads profile, runs steps.
 - `lib/detect.sh`: OS, arch, VM, headless, TTY detection.
 - `steps/`: `01-packages` (CLI), `02-shell` (fzf+plugins), `03-dotfiles` (configs), `04-apps` (GUI, desktop only).
 - `profiles/`: step list per machine type.
+- `scripts/provision-vm.sh`: clone + provision a tart VM hands-off (macOS, via `tart exec`).
+- `config/cloud-init/`: first-boot seeds for Linux VMs (Arch, Kali).
 
 The installer detects VM (skips GUI apps), headless (skips GUI on Linux), and TTY: interactive mode prompts for opt-in apps; via `curl|bash` (no TTY) uses defaults.

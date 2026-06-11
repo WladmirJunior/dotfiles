@@ -1,0 +1,31 @@
+#cloud-config
+# Arch Linux first-boot provisioning for a tart VM.
+# Creates the user, installs git, clones the dotfiles, runs install.sh minimal.
+# Build into a NoCloud cidata seed and attach read-only — see README.md.
+
+hostname: devvm
+
+users:
+  - name: dev
+    groups: [wheel]
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      - REPLACE_WITH_YOUR_SSH_PUBLIC_KEY
+
+# pacman: refresh and install git (cloud-init's package module supports pacman on
+# Arch images that ship it). git must exist before the runcmd clone.
+package_update: true
+packages:
+  - git
+  - curl
+
+runcmd:
+  # Clone and run the dotfiles installer as the 'dev' user (not root), so configs
+  # land in /home/dev. minimal profile = CLI only, no GUI on a headless VM.
+  - [ "bash", "-lc", "sudo -u dev git clone --depth 1 https://github.com/WladmirJunior/dotfiles.git /home/dev/.dotfiles" ]
+  - [ "bash", "-lc", "sudo -u dev bash /home/dev/.dotfiles/install.sh minimal" ]
+  - [ "bash", "-lc", "sudo -u dev bash /home/dev/.dotfiles/install.sh --check || true" ]
+
+final_message: "dotfiles provisioning done after $UPTIME seconds"

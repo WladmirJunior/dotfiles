@@ -1,0 +1,29 @@
+#cloud-config
+# Kali Linux first-boot provisioning for a tart VM.
+# Creates the user, installs git, clones the dotfiles, runs install.sh pentest.
+# Build into a NoCloud cidata seed and attach read-only — see README.md.
+
+hostname: devvm
+
+users:
+  - name: dev
+    groups: [sudo]
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      - REPLACE_WITH_YOUR_SSH_PUBLIC_KEY
+
+# apt: Kali is Debian-based. Refresh and install git before the runcmd clone.
+package_update: true
+packages:
+  - git
+  - curl
+
+runcmd:
+  # pentest profile = CLI + security tools, the right fit for a Kali VM.
+  - [ "bash", "-lc", "sudo -u dev git clone --depth 1 https://github.com/WladmirJunior/dotfiles.git /home/dev/.dotfiles" ]
+  - [ "bash", "-lc", "sudo -u dev bash /home/dev/.dotfiles/install.sh pentest" ]
+  - [ "bash", "-lc", "sudo -u dev bash /home/dev/.dotfiles/install.sh --check || true" ]
+
+final_message: "dotfiles provisioning done after $UPTIME seconds"
