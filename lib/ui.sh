@@ -219,3 +219,37 @@ summary_table() {
   else column -t -s'|'; fi
   return 0
 }
+
+# -----------------------------------------------------------------------------
+#  DRY-RUN  — run a state-changing command, or just announce it when DRY_RUN=1.
+#  Steps wrap any mutating command (ln, cp, mkdir, brew install, defaults write)
+#  in `run`, so `install.sh --dry-run` prints every action without executing.
+#  Read-only commands (test, grep, command -v) should NOT be wrapped — they're
+#  safe and the steps need their real results even during a dry run.
+#  DRY_RUN is exported by install.sh; defaults to 0 (execute) when unset.
+# -----------------------------------------------------------------------------
+run() {
+  if [ "${DRY_RUN:-0}" = 1 ]; then
+    printf '%s%s[dry-run]%s %s\n' "$PAD" "$c_info" "$c_reset" "$*"
+    return 0
+  fi
+  "$@"
+}
+
+# -----------------------------------------------------------------------------
+#  VERIFY  — post-install health checks. Each prints OK/FAIL and tallies into
+#  VERIFY_FAILS so the caller can report a non-zero summary.
+# -----------------------------------------------------------------------------
+VERIFY_FAILS=0
+verify_link() {  # verify_link PATH  → PATH is a symlink whose target resolves
+  if [ -L "$1" ] && [ -e "$1" ]; then ok "link ok: $1"
+  else note "FAIL link: $1 (missing or dangling)"; VERIFY_FAILS=$((VERIFY_FAILS+1)); fi
+}
+verify_path() {  # verify_path PATH  → PATH exists (file or dir)
+  if [ -e "$1" ]; then ok "exists: $1"
+  else note "FAIL missing: $1"; VERIFY_FAILS=$((VERIFY_FAILS+1)); fi
+}
+verify_cmd() {  # verify_cmd NAME  → NAME is on PATH
+  if command -v "$1" >/dev/null 2>&1; then ok "on PATH: $1"
+  else note "FAIL not on PATH: $1"; VERIFY_FAILS=$((VERIFY_FAILS+1)); fi
+}

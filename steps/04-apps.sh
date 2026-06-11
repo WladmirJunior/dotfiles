@@ -6,34 +6,44 @@
 # (browsers, editors, container runtimes) live in the private overlay.
 set -uo pipefail
 [ -z "${OS_TYPE:-}" ] && source "${DOTFILES_DIR:-.}/lib/detect.sh"
+source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
+command -v run >/dev/null 2>&1 || run() { [ "${DRY_RUN:-0}" = 1 ] && { echo "[dry-run] $*"; return 0; }; "$@"; }
 
 echo "[04] Apps..."
 
 if [ "$OS_TYPE" = "Darwin" ]; then
-  brew install --cask ghostty font-jetbrains-mono
+  run brew install --cask ghostty font-jetbrains-mono
   # 1Password is installed only if you opt into authentication (see install.sh);
   # duti (.md default-app helper) lives in the private overlay where it's used.
 
   # Link Ghostty's config now that the app is installed (03-dotfiles runs before
   # this step, so on a first desktop install it couldn't link it yet).
   if [ -f "$DOTFILES_DIR/config/ghostty/config" ]; then
-    mkdir -p "$HOME/.config/ghostty"
-    ln -sf "$DOTFILES_DIR/config/ghostty/config" "$HOME/.config/ghostty/config"
+    run mkdir -p "$HOME/.config/ghostty"
+    run ln -sf "$DOTFILES_DIR/config/ghostty/config" "$HOME/.config/ghostty/config"
     if ! infocmp xterm-ghostty >/dev/null 2>&1 && [ -f "$DOTFILES_DIR/config/ghostty/ghostty.terminfo" ]; then
-      tic -x "$DOTFILES_DIR/config/ghostty/ghostty.terminfo" 2>/dev/null || true
+      run tic -x "$DOTFILES_DIR/config/ghostty/ghostty.terminfo" 2>/dev/null || true
     fi
   fi
 
-  defaults write com.apple.Terminal "Default Terminal Application" -string "com.mitchellh.ghostty" 2>/dev/null || true
+  if [ "${DRY_RUN:-0}" = 1 ]; then
+    echo "[dry-run] defaults write com.apple.Terminal Default Terminal Application -> ghostty"
+  else
+    defaults write com.apple.Terminal "Default Terminal Application" -string "com.mitchellh.ghostty" 2>/dev/null || true
+  fi
   if ! grep -q "pam_tid" /etc/pam.d/sudo_local 2>/dev/null; then
-    echo "auth sufficient pam_tid.so" | sudo tee /etc/pam.d/sudo_local >/dev/null
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+      echo "[dry-run] enable Touch ID for sudo (write pam_tid to /etc/pam.d/sudo_local)"
+    else
+      echo "auth sufficient pam_tid.so" | sudo tee /etc/pam.d/sudo_local >/dev/null
+    fi
   fi
 
 elif [ "$OS_TYPE" = "Linux" ]; then
   if [ "${WANT_GHOSTTY:-no}" = "yes" ] || { [ "${INTERACTIVE:-no}" = "yes" ] && read -p "Install Ghostty? [y/N] " -n 1 -r && echo && [[ $REPLY =~ ^[Yy]$ ]]; }; then
     GHOSTTY_DEB=$(curl -s https://api.github.com/repos/ghostty-org/ghostty/releases/latest \
       | grep "browser_download_url.*\.deb" | grep -i "$(dpkg --print-architecture)" | cut -d '"' -f 4 | head -1)
-    [ -n "$GHOSTTY_DEB" ] && { curl -L "$GHOSTTY_DEB" -o /tmp/ghostty.deb; sudo apt install -y /tmp/ghostty.deb; rm -f /tmp/ghostty.deb; }
+    [ -n "$GHOSTTY_DEB" ] && { run curl -L "$GHOSTTY_DEB" -o /tmp/ghostty.deb; run sudo apt install -y /tmp/ghostty.deb; run rm -f /tmp/ghostty.deb; }
   fi
 fi
 echo "[04] done"

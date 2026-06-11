@@ -56,6 +56,18 @@ curl -fsSL .../install.sh | bash -s -- minimal
 curl -fsSL .../install.sh | bash -s -- pentest
 ```
 
+### Flags
+
+```bash
+./install.sh --dry-run minimal   # announce every action, change nothing (like terraform plan)
+./install.sh -n minimal          # short form of --dry-run
+./install.sh --check             # verify-only: symlinks resolve, core tools on PATH, no steps run
+```
+
+A normal install runs the verification automatically as its last step. `--dry-run`
+wraps every state-changing command (symlinks, copies, package installs, `defaults
+write`) so you can preview a run on a fresh machine before committing to it.
+
 ### Architecture
 
 - `install.sh`: orchestrator. Detects environment, reads profile, runs steps.

@@ -8,13 +8,26 @@
 #
 # With no profile arg on an interactive terminal you're asked to pick one.
 # Profiles in profiles/. Steps in steps/. Detection in lib/detect.sh. UI in lib/ui.sh.
+#
+# Flags:
+#   --dry-run, -n   announce every state-changing action without executing it
+#   --check         run only the post-install verification (no steps)
 set -uo pipefail
 
 REPO_URL="https://github.com/WladmirJunior/dotfiles.git"
 CLONE_DIR="$HOME/.dotfiles"
-# Profile may be given explicitly ($1). If omitted, we pick one AFTER detection:
-# interactively if there's a tty, else by environment (headless -> minimal).
-PROFILE_ARG="${1:-}"
+
+# Parse flags (any order) and keep the first non-flag arg as the profile.
+DRY_RUN=0; CHECK_ONLY=0; PROFILE_ARG=""
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run|-n) DRY_RUN=1 ;;
+    --check)      CHECK_ONLY=1 ;;
+    -*)           echo "Unknown flag: $arg" >&2; exit 2 ;;
+    *)            [ -z "$PROFILE_ARG" ] && PROFILE_ARG="$arg" ;;
+  esac
+done
+export DRY_RUN
 
 SELF_DIR="$( cd "$( dirname "${BASH_SOURCE[0]:-/dev/null}" )" 2>/dev/null && pwd )"
 if [ -n "$SELF_DIR" ] && [ -d "$SELF_DIR/steps" ] && [ -d "$SELF_DIR/profiles" ]; then
@@ -32,6 +45,28 @@ export DOTFILES_DIR
 
 source "$DOTFILES_DIR/lib/detect.sh"
 source "$DOTFILES_DIR/lib/ui.sh"
+
+# verify_install: post-install health check. Symlinks resolve, core tools on PATH.
+# Run as the final step of a normal install, or standalone via `--check`.
+verify_install() {
+  banner "Verify · post-install health check"
+  verify_cmd git; verify_cmd zsh
+  command -v nvim >/dev/null 2>&1 && verify_cmd nvim
+  verify_path "$HOME/.zshrc"
+  [ -e "$HOME/.config/nvim/init.lua" ] && verify_link "$HOME/.config/nvim/init.lua"
+  [ -e "$HOME/.config/ghostty/config" ] && verify_link "$HOME/.config/ghostty/config"
+  if [ "$VERIFY_FAILS" -eq 0 ]; then ok "all checks passed"
+  else note "$VERIFY_FAILS check(s) failed — see FAIL lines above"; fi
+  return "$VERIFY_FAILS"
+}
+
+# --check: verification only, no install steps.
+if [ "$CHECK_ONLY" = 1 ]; then
+  verify_install; exit $?
+fi
+
+# Announce dry-run mode up front so the user knows nothing will be changed.
+[ "$DRY_RUN" = 1 ] && info "DRY-RUN: actions are announced, not executed."
 
 # Put Homebrew on PATH for every step. 01-packages may have just installed it, or
 # it may already exist (CI images, re-runs) — either way its shellenv isn't in the
@@ -112,6 +147,9 @@ while IFS= read -r step <&3; do
 done 3< "$PROFILE_FILE"
 
 ok "Public setup done (profile: $PROFILE)."
+
+# Verify what the steps just applied (skipped in dry-run: nothing was changed).
+[ "$DRY_RUN" = 1 ] || verify_install || note "verification reported issues (see above)"
 
 # -----------------------------------------------------------------------------
 #  Connect & authenticate (opt-in) — wire up the 1Password SSH agent + GitHub CLI
