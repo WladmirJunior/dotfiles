@@ -36,6 +36,32 @@ SELF_DIR="$( cd "$( dirname "${BASH_SOURCE[0]:-/dev/null}" )" 2>/dev/null && pwd
 if [ -n "$SELF_DIR" ] && [ -d "$SELF_DIR/steps" ] && [ -d "$SELF_DIR/profiles" ]; then
   DOTFILES_DIR="$SELF_DIR"
 else
+  # Bootstrap dependency: on a clean Debian/Kali (and some minimal Ubuntu images)
+  # git is not preinstalled. We need git to clone the repo before any step runs,
+  # so handle it here. macOS always ships git via Xcode CLT (or its stub triggers
+  # the install prompt), so this block is a no-op there.
+  if ! command -v git >/dev/null 2>&1; then
+    if [ -r /etc/os-release ] && command -v apt-get >/dev/null 2>&1; then
+      echo "Bootstrapping git (apt) before clone..."
+      if command -v sudo >/dev/null 2>&1; then
+        sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git ca-certificates
+      else
+        apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git ca-certificates
+      fi
+    elif command -v dnf >/dev/null 2>&1; then
+      echo "Bootstrapping git (dnf) before clone..."
+      (command -v sudo >/dev/null 2>&1 && sudo dnf install -y git ca-certificates) \
+        || dnf install -y git ca-certificates
+    elif command -v pacman >/dev/null 2>&1; then
+      echo "Bootstrapping git (pacman) before clone..."
+      (command -v sudo >/dev/null 2>&1 && sudo pacman -Sy --noconfirm git ca-certificates) \
+        || pacman -Sy --noconfirm git ca-certificates
+    else
+      echo "git not found and no recognized package manager (apt/dnf/pacman) — install git manually and retry" >&2
+      exit 1
+    fi
+  fi
+
   echo "Cloning repo to $CLONE_DIR..."
   if [ -d "$CLONE_DIR/.git" ]; then
     git -C "$CLONE_DIR" pull --ff-only 2>/dev/null || true
