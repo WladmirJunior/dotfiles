@@ -1,9 +1,17 @@
 #cloud-config
 # Kali Linux first-boot provisioning for a tart VM.
-# Creates the user, installs git, clones the dotfiles, runs install.sh pentest.
+#
+# tart has no real Kali ARM OCI image, so we boot the cirruslabs Debian ARM base
+# (ghcr.io/cirruslabs/debian, ~0.6 GB, cloud-init + tart-guest-agent built in)
+# and turn it into Kali here: add the Kali apt repo + signing key, then install
+# the Kali metapackage. After this seed finishes, the host drives the dotfiles
+# install via `tart exec` (no SSH key needed — see provision-kali-vm.sh).
+#
 # Build into a NoCloud cidata seed and attach read-only — see README.md.
+# {{SSH_AUTHORIZED_KEY}} is templated at seed-build time by provision-kali-vm.sh;
+# it stays empty unless you pass --ssh-key, because the Guest Agent path needs no key.
 
-hostname: devvm
+hostname: kali-devvm
 
 users:
   - name: dev
@@ -11,19 +19,49 @@ users:
     sudo: ["ALL=(ALL) NOPASSWD:ALL"]
     shell: /bin/bash
     lock_passwd: true
-    ssh_authorized_keys:
-      - REPLACE_WITH_YOUR_SSH_PUBLIC_KEY
+    # SSH_KEY_BLOCK: provision-kali-vm.sh keeps these two lines only when
+    # --ssh-key is passed; otherwise it strips the block (Guest Agent needs no key).
+    ssh_authorized_keys: # SSH_KEY_BLOCK
+      - {{SSH_AUTHORIZED_KEY}} # SSH_KEY_BLOCK
 
-# apt: Kali is Debian-based. Refresh and install git before the runcmd clone.
+# Kali's rolling repo + its signing key. cloud-init writes these before the apt
+# package phase so `kali-linux-headless` resolves. The key is fetched in runcmd
+# (bootcmd is too early for network on some images); packages: below pulls the
+# prerequisites that exist in the Debian base.
+apt:
+  preserve_sources_list: true
+
 package_update: true
 packages:
   - git
   - curl
+  - ca-certificates
+  - gnupg
+
+write_files:
+  - path: /etc/apt/sources.list.d/kali.list
+    permissions: "0644"
+    content: |
+      deb https://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware
+  # Pin so the Debian base packages stay unless explicitly pulling Kali ones,
+  # avoiding a full surprise dist-upgrade of the base on first boot.
+  - path: /etc/apt/preferences.d/kali.pref
+    permissions: "0644"
+    content: |
+      Package: *
+      Pin: release o=Kali
+      Pin-Priority: 100
 
 runcmd:
-  # pentest profile = CLI + security tools, the right fit for a Kali VM.
-  - [ "bash", "-lc", "sudo -u dev git clone --depth 1 https://github.com/WladmirJunior/dotfiles.git /home/dev/.dotfiles" ]
-  - [ "bash", "-lc", "sudo -u dev bash /home/dev/.dotfiles/install.sh pentest" ]
-  - [ "bash", "-lc", "sudo -u dev bash /home/dev/.dotfiles/install.sh --check || true" ]
+  # 1. Trust the Kali signing key, then refresh with the Kali repo enabled.
+  - [ "bash", "-lc", "curl -fsSL https://archive.kali.org/archive-key.asc | gpg --dearmor -o /usr/share/keyrings/kali-archive-keyring.gpg" ]
+  - [ "bash", "-lc", "sed -i 's# main# [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] main#' /etc/apt/sources.list.d/kali.list" ]
+  - [ "bash", "-lc", "apt-get update -y" ]
+  # 2. Install the headless Kali toolset (no GUI on a tart VM). -t kali-rolling
+  #    overrides the low pin above just for this metapackage and its deps.
+  - [ "bash", "-lc", "DEBIAN_FRONTEND=noninteractive apt-get install -y -t kali-rolling kali-linux-headless || DEBIAN_FRONTEND=noninteractive apt-get install -y kali-linux-headless" ]
+  # 3. Mark cloud-init done. The dotfiles `pentest` install + `--check` run from
+  #    the host via `tart exec` (parseable PASS/FAIL), not here.
+  - [ "bash", "-lc", "touch /var/lib/cloud/kali-seed-done" ]
 
-final_message: "dotfiles provisioning done after $UPTIME seconds"
+final_message: "kali seed provisioning done after $UPTIME seconds"
