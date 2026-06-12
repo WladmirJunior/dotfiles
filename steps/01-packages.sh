@@ -11,9 +11,32 @@ echo "[01] CLI packages..."
 if [ "$OS_TYPE" = "Darwin" ]; then
   if ! command -v brew >/dev/null 2>&1; then
     echo "Installing Homebrew..."
-    run /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    [ "${DRY_RUN:-0}" = 1 ] || eval "$(/opt/homebrew/bin/brew shellenv)"
+    # Force NONINTERACTIVE: the brew installer otherwise tries to call
+    # `read` on stdin to confirm, but under `curl|bash` stdin is the pipe
+    # carrying our own script — the read drains the pipe and the installer
+    # aborts mid-flight, leaving /opt/homebrew/ created but no `brew`
+    # binary. NONINTERACTIVE=1 skips the prompt and uses defaults.
+    # Also unset INTERACTIVE in case the user's profile exported it
+    # (the brew installer treats $INTERACTIVE=1 as a hard override that
+    # overrides our detected non-tty stdin).
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+      echo "[dry-run] NONINTERACTIVE=1 unset INTERACTIVE  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+    else
+      env -u INTERACTIVE NONINTERACTIVE=1 /bin/bash -c \
+        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      eval "$(/opt/homebrew/bin/brew shellenv)"
+    fi
   fi
+
+  # If brew install left the directory but no binary (the symptom of an
+  # interrupted install), bail loudly so the user knows to re-run instead of
+  # silently failing every subsequent step that wants `brew`.
+  if [ "${DRY_RUN:-0}" != 1 ] && [ ! -x /opt/homebrew/bin/brew ]; then
+    echo "[01] ERROR: /opt/homebrew/bin/brew missing after install attempt." >&2
+    echo "[01] Re-run from a fresh terminal:  rm -rf /opt/homebrew && curl -fsSL https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/install.sh | bash -s -- desktop" >&2
+    exit 1
+  fi
+
   # gum is NOT installed here: the UI uses our fork binary (table --width/
   # --border-row), fetched by ui_bootstrap_gum in install.sh. See lib/ui.sh.
   run brew install git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils
