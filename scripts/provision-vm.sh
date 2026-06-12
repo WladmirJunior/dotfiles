@@ -70,6 +70,23 @@ echo "==> Networking: $NET"
 
 run() { if [ "$DRY_RUN" = 1 ]; then echo "[dry-run] $*"; else "$@"; fi; }
 
+# If FROM is a registry reference (contains ":" but not as a leading drive prefix
+# and not a path), prefer a locally-cached image with the same basename when
+# present. This avoids re-pulling 27GB every run after the first one. Pass
+# `--from <localname>` explicitly to force a specific local source.
+if [[ "$FROM" == *":"* ]] || [[ "$FROM" == *"/"* ]]; then
+  FROM_LOCAL_CANDIDATE="${FROM##*/}"   # ghcr.io/cirruslabs/macos-tahoe-base:latest -> macos-tahoe-base:latest
+  FROM_LOCAL_CANDIDATE="${FROM_LOCAL_CANDIDATE%:*}"   # -> macos-tahoe-base
+  # Try the candidate as-is, then with the leading "macos-" stripped (tahoe-base).
+  for cand in "$FROM_LOCAL_CANDIDATE" "${FROM_LOCAL_CANDIDATE#macos-}"; do
+    if tart list 2>/dev/null | awk '$1=="local"{print $2}' | grep -qx "$cand"; then
+      echo "==> using local image '$cand' instead of '$FROM' (saves ~27GB re-pull)"
+      FROM="$cand"
+      break
+    fi
+  done
+fi
+
 echo "==> Provisioning VM '$NAME' from '$FROM' (profile: $PROFILE)"
 
 # 1. Clone the base into a fresh VM (idempotent: delete an old one first, to
