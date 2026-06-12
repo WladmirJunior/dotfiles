@@ -18,9 +18,21 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   # --border-row), fetched by ui_bootstrap_gum in install.sh. See lib/ui.sh.
   run brew install git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils
 elif [ "$OS_TYPE" = "Linux" ]; then
-  run sudo apt update
-  run sudo apt install -y zsh neovim fzf zoxide eza bat ripgrep fd-find git-delta \
-    nodejs npm curl git gh tealdeer software-properties-common wget
+  # On a clean apt-based image we may run as root (no sudo). Pick the right prefix.
+  SUDO=""
+  [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO=sudo
+
+  run $SUDO apt-get update -qq
+  # Install in two passes so a missing package in one distro (e.g. trixie removed
+  # `software-properties-common` from the default repo) doesn't drop the rest.
+  # First pass: core tools that must be there. Second pass: nice-to-haves, best-effort.
+  run $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    zsh neovim fzf zoxide bat ripgrep fd-find git-delta nodejs npm curl git gh wget
+  # Best-effort extras; never abort if one is missing in this distro.
+  for pkg in eza tealdeer software-properties-common; do
+    run $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" 2>/dev/null \
+      || echo "  skip: $pkg not available in this distro"
+  done
   run mkdir -p ~/.local/bin
   [ -n "$(command -v fdfind 2>/dev/null)" ] && run ln -sf "$(command -v fdfind)" ~/.local/bin/fd
   [ -n "$(command -v batcat 2>/dev/null)" ] && run ln -sf "$(command -v batcat)" ~/.local/bin/bat
