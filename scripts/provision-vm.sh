@@ -13,6 +13,12 @@
 #   --profile P     dotfiles profile to install: desktop|minimal|pentest (default: minimal)
 #   --dry-run       print what would happen, run nothing
 #   --keep          leave the VM running at the end (default: stop it)
+#   --net <mode>    networking: shared (default), bridged=IFACE, softnet, none
+#                   On the corporate Mac (Zscaler always-on), default `shared`
+#                   silently fails — VM has IP but no internet. Auto-detected
+#                   here: when IS_WORK_MAC heuristic matches, defaults to
+#                   `bridged=en0`. Override with --net to force a mode.
+#                   See [[reference_tart_zscaler_bridged]].
 #
 # Requires: tart (brew install cirruslabs/cli/tart). macOS host only.
 set -uo pipefail
@@ -22,6 +28,7 @@ NAME="provision-test"
 PROFILE="minimal"
 DRY_RUN=0
 KEEP=0
+NET=""
 DOTFILES_URL="https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/install.sh"
 
 while [ "$#" -gt 0 ]; do
@@ -29,14 +36,37 @@ while [ "$#" -gt 0 ]; do
     --from)     FROM="$2"; shift 2 ;;
     --name)     NAME="$2"; shift 2 ;;
     --profile)  PROFILE="$2"; shift 2 ;;
+    --net)      NET="$2"; shift 2 ;;
     --dry-run)  DRY_RUN=1; shift ;;
     --keep)     KEEP=1; shift ;;
-    -h|--help)  sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,22p' "$0"; exit 0 ;;
     *)          echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 
 command -v tart >/dev/null 2>&1 || { echo "tart not found (brew install cirruslabs/cli/tart)"; exit 1; }
+
+# Decide networking: if user didn't override, auto-detect work mac and use
+# bridged on en0 to bypass Zscaler. Personal/non-work machines get the default
+# shared NAT (no extra flags).
+if [ -z "$NET" ]; then
+  if [ -d "/Library/Application Support/JAMF" ] \
+    || [ -f "/Library/LaunchDaemons/com.zscaler.tunnel.plist" ] \
+    || [[ "$(hostname -s 2>/dev/null)" == *nubank* ]] \
+    || [[ "$(hostname -s 2>/dev/null)" == wladmir-* ]]; then
+    NET="bridged=en0"
+  else
+    NET="shared"
+  fi
+fi
+case "$NET" in
+  shared)         TART_NET_FLAGS=() ;;
+  bridged=*)      TART_NET_FLAGS=(--net-bridged="${NET#bridged=}") ;;
+  softnet)        TART_NET_FLAGS=(--net-softnet) ;;
+  none)           TART_NET_FLAGS=() ;;
+  *)              echo "Unknown --net mode: $NET (use: shared, bridged=IFACE, softnet, none)" >&2; exit 2 ;;
+esac
+echo "==> Networking: $NET"
 
 run() { if [ "$DRY_RUN" = 1 ]; then echo "[dry-run] $*"; else "$@"; fi; }
 
@@ -54,9 +84,9 @@ run tart clone "$FROM" "$NAME"
 # 2. Boot it detached so the script keeps control. --no-graphics keeps it headless.
 echo "==> Booting '$NAME' (detached)"
 if [ "$DRY_RUN" = 1 ]; then
-  echo "[dry-run] tart run --no-graphics $NAME &  (background)"
+  echo "[dry-run] tart run --no-graphics ${TART_NET_FLAGS[*]} $NAME &  (background)"
 else
-  tart run --no-graphics "$NAME" >/tmp/tart-$NAME.log 2>&1 &
+  tart run --no-graphics "${TART_NET_FLAGS[@]}" "$NAME" >/tmp/tart-$NAME.log 2>&1 &
   TART_PID=$!
 fi
 
@@ -86,11 +116,13 @@ else
 fi
 
 # 5. Verify with the installer's own --check inside the guest.
+# Use `bash <path>` (not direct exec) because the install.sh fetched via
+# curl|bash is written without the +x bit inside the guest.
 echo "==> Verifying inside the guest (install.sh --check)..."
 if [ "$DRY_RUN" = 1 ]; then
-  echo "[dry-run] tart exec $NAME bash -lc '~/.dotfiles/install.sh --check'"
+  echo "[dry-run] tart exec $NAME bash -lc 'bash ~/.dotfiles/install.sh --check'"
 else
-  tart exec "$NAME" bash -lc '~/.dotfiles/install.sh --check' || echo "WARN: verification reported issues"
+  tart exec "$NAME" bash -lc 'bash ~/.dotfiles/install.sh --check' || echo "WARN: verification reported issues"
 fi
 
 # 6. Stop the VM unless --keep.
