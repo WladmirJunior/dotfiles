@@ -4,6 +4,13 @@
 set -uo pipefail
 [ -z "${OS_TYPE:-}" ] && source "${DOTFILES_DIR:-.}/lib/detect.sh"
 source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
+# Transaction helpers: record mutations so the orchestrator can roll back on
+# failure. When the lib isn't sourced (step run standalone), the tx_* calls
+# below are stubbed to no-ops so the step still works on its own.
+[ -f "${DOTFILES_DIR:-.}/lib/transaction.sh" ] && source "${DOTFILES_DIR:-.}/lib/transaction.sh" 2>/dev/null || true
+for fn in tx_brew_install tx_brew_cask tx_apt_install tx_brew_self; do
+  command -v "$fn" >/dev/null 2>&1 || eval "$fn() { :; }"
+done
 command -v run >/dev/null 2>&1 || run() { [ "${DRY_RUN:-0}" = 1 ] && { echo "[dry-run] $*"; return 0; }; "$@"; }
 
 echo "[01] CLI packages..."
@@ -22,6 +29,10 @@ if [ "$OS_TYPE" = "Darwin" ]; then
     if [ "${DRY_RUN:-0}" = 1 ]; then
       echo "[dry-run] NONINTERACTIVE=1 unset INTERACTIVE  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
     else
+      # Record that we are about to create the whole Homebrew prefix, so a later
+      # failure rolls it back (rm -rf /opt/homebrew) rather than leaving a
+      # half-installed prefix that traps every future run.
+      tx_brew_self
       env -u INTERACTIVE NONINTERACTIVE=1 /bin/bash -c \
         "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
       eval "$(/opt/homebrew/bin/brew shellenv)"
@@ -29,32 +40,41 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   fi
 
   # If brew install left the directory but no binary (the symptom of an
-  # interrupted install), bail loudly so the user knows to re-run instead of
-  # silently failing every subsequent step that wants `brew`.
+  # interrupted install), fail. The orchestrator's rollback will remove the
+  # partial /opt/homebrew (recorded by tx_brew_self above) so the next run
+  # starts clean — no manual `rm -rf` needed.
   if [ "${DRY_RUN:-0}" != 1 ] && [ ! -x /opt/homebrew/bin/brew ]; then
     echo "[01] ERROR: /opt/homebrew/bin/brew missing after install attempt." >&2
-    echo "[01] Re-run from a fresh terminal:  rm -rf /opt/homebrew && curl -fsSL https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/install.sh | bash -s -- desktop" >&2
     exit 1
   fi
 
+  # Record the formulae before installing so a later-step failure can uninstall
+  # exactly what this run added.
+  BREW_PKGS="git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils"
+  [ "${DRY_RUN:-0}" != 1 ] && tx_brew_install $BREW_PKGS
   # gum is NOT installed here: the UI uses our fork binary (table --width/
   # --border-row), fetched by ui_bootstrap_gum in install.sh. See lib/ui.sh.
-  run brew install git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils
+  run brew install $BREW_PKGS
 elif [ "$OS_TYPE" = "Linux" ]; then
   # On a clean apt-based image we may run as root (no sudo). Pick the right prefix.
   SUDO=""
   [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO=sudo
 
+  TX_SUDO="$SUDO"   # used by tx_apt_install's undo (apt-get remove)
   run $SUDO apt-get update -qq
   # Install in two passes so a missing package in one distro (e.g. trixie removed
   # `software-properties-common` from the default repo) doesn't drop the rest.
   # First pass: core tools that must be there. Second pass: nice-to-haves, best-effort.
-  run $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    zsh neovim fzf zoxide bat ripgrep fd-find git-delta nodejs npm curl git gh wget
+  APT_CORE="zsh neovim fzf zoxide bat ripgrep fd-find git-delta nodejs npm curl git gh wget"
+  [ "${DRY_RUN:-0}" != 1 ] && tx_apt_install $APT_CORE
+  run $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y $APT_CORE
   # Best-effort extras; never abort if one is missing in this distro.
   for pkg in eza tealdeer software-properties-common; do
-    run $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" 2>/dev/null \
-      || echo "  skip: $pkg not available in this distro"
+    if run $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" 2>/dev/null; then
+      [ "${DRY_RUN:-0}" != 1 ] && tx_apt_install "$pkg"
+    else
+      echo "  skip: $pkg not available in this distro"
+    fi
   done
   run mkdir -p ~/.local/bin
   [ -n "$(command -v fdfind 2>/dev/null)" ] && run ln -sf "$(command -v fdfind)" ~/.local/bin/fd

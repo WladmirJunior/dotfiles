@@ -74,9 +74,19 @@ export DOTFILES_DIR
 
 source "$DOTFILES_DIR/lib/detect.sh"
 source "$DOTFILES_DIR/lib/ui.sh"
-[ -f "$DOTFILES_DIR/lib/template.sh" ] && source "$DOTFILES_DIR/lib/template.sh"
-[ -f "$DOTFILES_DIR/lib/plan.sh" ]     && source "$DOTFILES_DIR/lib/plan.sh"
+[ -f "$DOTFILES_DIR/lib/template.sh" ]    && source "$DOTFILES_DIR/lib/template.sh"
+[ -f "$DOTFILES_DIR/lib/plan.sh" ]        && source "$DOTFILES_DIR/lib/plan.sh"
+[ -f "$DOTFILES_DIR/lib/transaction.sh" ] && source "$DOTFILES_DIR/lib/transaction.sh"
 [ "$PLAN_MODE" = 1 ] && plan_reset
+
+# Transaction log: track mutations so a failed install rolls back cleanly
+# instead of leaving the machine half-configured. Disabled in dry-run/plan
+# (nothing is changed) and when the helper isn't present.
+TX_ENABLED=0
+if [ "$DRY_RUN" != 1 ] && command -v tx_init >/dev/null 2>&1; then
+  if tx_init; then TX_ENABLED=1; fi
+fi
+export TX_ENABLED
 
 # verify_install: post-install health check. Symlinks resolve, core tools on PATH.
 # Run as the final step of a normal install, or standalone via `--check`.
@@ -172,6 +182,25 @@ step_title() { local s="${1#*-}"; s="${s%.sh}"; echo "${s//-/ }"; }
 # installing a cask) would otherwise drain it and bash would hit EOF after the
 # loop, skipping the closing banner. Each step runs with stdin from /dev/null so it
 # can't touch the pipe; interactive steps read /dev/tty directly, not stdin.
+# abort_install: a step failed. Roll back everything this run recorded (unless
+# disabled) and exit non-zero. This replaces the old "note and continue" which
+# left a clean machine half-configured on the first error.
+abort_install() {
+  local failed_step="$1" rc="$2"
+  echo "" >&2
+  note "step $failed_step failed (rc=$rc) — aborting install" 2>/dev/null \
+    || echo "step $failed_step failed (rc=$rc) — aborting install" >&2
+  if [ "$TX_ENABLED" = 1 ]; then
+    tx_rollback || true
+    note "machine restored to its pre-install state. Fix the cause and re-run." 2>/dev/null \
+      || echo "machine restored to its pre-install state. Fix the cause and re-run." >&2
+  else
+    note "no transaction log to roll back; inspect the partial state manually." 2>/dev/null \
+      || echo "no transaction log; inspect partial state manually." >&2
+  fi
+  exit "$rc"
+}
+
 STEP_N=0
 while IFS= read -r step <&3; do
   [ -z "$step" ] && continue
@@ -179,8 +208,15 @@ while IFS= read -r step <&3; do
   STEP_N=$((STEP_N + 1))
   brew_env   # pick up a brew that an earlier step (01-packages) may have installed
   step "$STEP_N/$STEP_TOTAL" "$(step_title "$step")"
-  bash "$DOTFILES_DIR/steps/$step" </dev/null || note "step $step failed (rc=$?), continuing"
+  # Fail-fast: a non-zero step aborts the whole install and triggers rollback.
+  # Capture the step's real exit code directly (a `if ! cmd` would mask it as 1).
+  bash "$DOTFILES_DIR/steps/$step" </dev/null
+  step_rc=$?
+  [ "$step_rc" -ne 0 ] && abort_install "$step" "$step_rc"
 done 3< "$PROFILE_FILE"
+
+# All steps succeeded: commit the transaction (rotate the log, no rollback).
+[ "$TX_ENABLED" = 1 ] && tx_commit
 
 ok "Public setup done (profile: $PROFILE)."
 
