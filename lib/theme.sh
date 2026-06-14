@@ -24,7 +24,7 @@
 # helpers render); the rest are gum-only and keep their 256 codes.
 THEME_PRIMARY=51        # step titles, prompts, key accents
 THEME_ACCENT=51         # interactive cursor / selection accent
-THEME_SUCCESS=82        # ✓ done / success lines
+THEME_SUCCESS=107;       THEME_SUCCESS_HEX="#94c66e"   # ✓ done / success (soft olive green, Xcode WWDC)
 THEME_WARNING=214;       THEME_WARNING_HEX="#e9b143"   # ⚠ warnings / recoverable-destructive (amber)
 THEME_CRITICAL=131;      THEME_CRITICAL_HEX="#bb383a"  # ✗ errors / destructive confirm (soft brick red, Xcode WWDC)
 THEME_PATH=33;           THEME_PATH_HEX="#268bd2"      # filesystem paths (blue)
