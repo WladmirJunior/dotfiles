@@ -23,18 +23,11 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-#  THEME  — edit these to restyle the whole UI. Values are 256-color codes
-#           (see `gum style` / 256-color charts). Names are semantic, not raw
-#           colors, so a retheme is a one-line change here.
+#  THEME  — the semantic palette lives in lib/theme.sh (single source of truth,
+#           shared with interactive-shell helpers). Edit colors there, not here.
 # -----------------------------------------------------------------------------
-THEME_PRIMARY=51        # step titles, prompts, key accents
-THEME_ACCENT=51         # interactive cursor / selection accent
-THEME_SUCCESS=82        # ✓ done / success lines
-THEME_BORDER=73         # banner & table borders (teal)
-THEME_BORDER_MUTED=240  # quiet borders (step box)
-THEME_LOG=240           # secondary / log lines under a step
-THEME_VALUE=255         # plain values (e.g. summary table cells)
-THEME_SPINNER=51        # loading spinner (gum spin)
+# shellcheck source=lib/theme.sh
+. "$(dirname "${BASH_SOURCE[0]:-$0}")/theme.sh"
 
 LAYOUT_MARGIN=2         # left margin so nothing hugs the terminal edge
 LAYOUT_MAXWIDTH=90      # cap the UI width on very wide terminals

@@ -13,9 +13,8 @@ alias ls='eza --icons --git --group-directories-first'
 alias ll='eza -l --icons --git --group-directories-first'
 alias la='eza -a --icons --git --group-directories-first'
 alias lt='eza --tree --icons'
-alias cat='bat'
-alias grep='rg'
-alias find='fd'
+# Keep classic cat/grep/find intact; use the modern tools by their own names
+# (bat / rg / fd are installed and callable directly).
 alias help='tldr'
 
 # ─────────────────────────── Git ───────────────────────────
