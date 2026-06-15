@@ -17,6 +17,8 @@
 set -uo pipefail
 
 REPO_URL="https://github.com/WladmirJunior/dotfiles.git"
+REPO_SLUG="WladmirJunior/dotfiles"     # owner/repo, for the tarball URL
+REPO_REF="${DOTFILES_REF:-main}"        # branch/tag/sha to fetch (override via env)
 CLONE_DIR="$HOME/.dotfiles"
 
 # Parse flags (any order) and keep the first non-flag arg as the profile.
@@ -36,63 +38,35 @@ SELF_DIR="$( cd "$( dirname "${BASH_SOURCE[0]:-/dev/null}" )" 2>/dev/null && pwd
 if [ -n "$SELF_DIR" ] && [ -d "$SELF_DIR/steps" ] && [ -d "$SELF_DIR/profiles" ]; then
   DOTFILES_DIR="$SELF_DIR"
 else
-  # Bootstrap dependency: git is needed to clone the repo before any step runs.
-  # It is NOT preinstalled on a clean Debian/Kali, nor on a vanilla macOS without
-  # the Xcode Command Line Tools. Handle each platform.
-  if ! command -v git >/dev/null 2>&1; then
-    if [ "$(uname)" = "Darwin" ]; then
-      # macOS without git: git lives in the Xcode Command Line Tools. The
-      # `xcode-select --install` GUI installer is asynchronous and cannot be
-      # waited on from a `curl|bash` pipe, so we trigger it, then poll for git
-      # to appear (the user clicks Install in the dialog). Bail with a clear
-      # instruction if it doesn't finish — never fall through to a broken clone.
-      echo "git not found. Installing the Xcode Command Line Tools (a dialog will open)..."
-      xcode-select --install 2>/dev/null || true
-      echo "Waiting for the Command Line Tools to finish installing (click Install in the dialog)..."
-      _clt_ok=0
-      for _ in $(seq 1 120); do          # up to ~20 min (10s * 120)
-        if command -v git >/dev/null 2>&1 && xcode-select -p >/dev/null 2>&1; then _clt_ok=1; break; fi
-        sleep 10
-      done
-      if [ "$_clt_ok" != 1 ]; then
-        echo "ERROR: git still unavailable after the Command Line Tools wait." >&2
-        echo "Install them manually with 'xcode-select --install', then re-run this script." >&2
-        exit 1
-      fi
-      echo "Command Line Tools ready (git available)."
-    elif [ -r /etc/os-release ] && command -v apt-get >/dev/null 2>&1; then
-      echo "Bootstrapping git (apt) before clone..."
-      if command -v sudo >/dev/null 2>&1; then
-        sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git ca-certificates
-      else
-        apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git ca-certificates
-      fi
-    elif command -v dnf >/dev/null 2>&1; then
-      echo "Bootstrapping git (dnf) before clone..."
-      (command -v sudo >/dev/null 2>&1 && sudo dnf install -y git ca-certificates) \
-        || dnf install -y git ca-certificates
-    elif command -v pacman >/dev/null 2>&1; then
-      echo "Bootstrapping git (pacman) before clone..."
-      (command -v sudo >/dev/null 2>&1 && sudo pacman -Sy --noconfirm git ca-certificates) \
-        || pacman -Sy --noconfirm git ca-certificates
-    else
-      echo "git not found and no recognized package manager (apt/dnf/pacman) — install git manually and retry" >&2
-      exit 1
-    fi
-  fi
-
-  echo "Cloning repo to $CLONE_DIR..."
-  if [ -d "$CLONE_DIR/.git" ]; then
+  # Fetch the repo WITHOUT git. A vanilla macOS has no git until the Xcode CLT
+  # is installed, and a clean Debian/Kali has no git either — but both always
+  # have curl + tar. So we download the GitHub source tarball and extract it.
+  # git itself is just another package the steps install later (step 01); it is
+  # not a bootstrap dependency. Re-runs: refresh by re-extracting over the dir.
+  if command -v git >/dev/null 2>&1 && [ -d "$CLONE_DIR/.git" ]; then
+    echo "Updating existing repo at $CLONE_DIR..."
     git -C "$CLONE_DIR" pull --ff-only 2>/dev/null || true
   else
-    # Abort hard if the clone fails — otherwise the script falls through to
-    # `source lib/detect.sh` on an empty dir and dies with 'OS_TYPE: unbound
-    # variable', masking the real cause.
-    if ! git clone --depth 1 "$REPO_URL" "$CLONE_DIR"; then
-      echo "ERROR: failed to clone $REPO_URL into $CLONE_DIR." >&2
-      echo "Check network/git and re-run. (If a partial $CLONE_DIR exists, remove it first.)" >&2
-      exit 1
+    echo "Fetching dotfiles ($REPO_REF) to $CLONE_DIR..."
+    command -v curl >/dev/null 2>&1 || { echo "ERROR: curl not found." >&2; exit 1; }
+    command -v tar  >/dev/null 2>&1 || { echo "ERROR: tar not found." >&2; exit 1; }
+    _tgz="$(mktemp -t dotfiles.XXXXXX).tar.gz"
+    _tarurl="https://codeload.github.com/$REPO_SLUG/tar.gz/refs/heads/$REPO_REF"
+    # Fall back to the tags/sha endpoint if the ref isn't a branch.
+    if ! curl -fsSL "$_tarurl" -o "$_tgz"; then
+      _tarurl="https://codeload.github.com/$REPO_SLUG/tar.gz/$REPO_REF"
+      if ! curl -fsSL "$_tarurl" -o "$_tgz"; then
+        echo "ERROR: could not download $REPO_SLUG @ $REPO_REF tarball." >&2
+        rm -f "$_tgz"; exit 1
+      fi
     fi
+    # GitHub tarballs extract into a top-level <repo>-<ref>/ dir; strip it.
+    mkdir -p "$CLONE_DIR"
+    if ! tar -xzf "$_tgz" -C "$CLONE_DIR" --strip-components=1; then
+      echo "ERROR: failed to extract the dotfiles tarball into $CLONE_DIR." >&2
+      rm -f "$_tgz"; exit 1
+    fi
+    rm -f "$_tgz"
   fi
   DOTFILES_DIR="$CLONE_DIR"
 fi
