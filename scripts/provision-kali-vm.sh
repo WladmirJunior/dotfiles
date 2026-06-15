@@ -70,12 +70,9 @@ command -v hdiutil >/dev/null 2>&1 || { echo "hdiutil not found (macOS only)"; e
 
 run() { if [ "$DRY_RUN" = 1 ]; then echo "[dry-run] $*"; else "$@"; fi; }
 
-# --- Networking: bridged on the work Mac to bypass Zscaler, else shared. -------
+# --- Networking: default shared NAT; export IS_WORK_MAC=1 for bridged on en0. --
 if [ -z "$NET" ]; then
-  if [ -d "/Library/Application Support/JAMF" ] \
-    || [ -f "/Library/LaunchDaemons/com.zscaler.tunnel.plist" ] \
-    || [[ "$(hostname -s 2>/dev/null)" == *nubank* ]] \
-    || [[ "$(hostname -s 2>/dev/null)" == wladmir-* ]]; then
+  if [ "${IS_WORK_MAC:-0}" = 1 ]; then
     NET="bridged=en0"
   else
     NET="shared"

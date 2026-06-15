@@ -52,8 +52,8 @@ EOF
 fi
 lnk "$D/config/nvim/init.lua"   "$HOME/.config/nvim/init.lua"
 
-# Ghostty config/terminfo moved to the private overlay (a terminal isn't a base
-# concern — every macOS ships Terminal.app). See ***REMOVED*** 02-apps.
+# Ghostty config/terminfo moved to a personal overlay (a terminal isn't a base
+# concern; every macOS ships Terminal.app).
 
 # git config (delta) — cp because git include.path resolves symlinks fine,
 # but we keep it as a copy to avoid git reading a path inside the repo.

@@ -3,7 +3,7 @@
 # profile choice (not host detection) decides whether GUI apps get installed —
 # headless hosts default to `minimal`, which skips this step entirely.
 # Terminal, fonts, password manager, Touch ID for sudo. Personal apps
-# (browsers, editors, container runtimes) live in the private overlay.
+# (browsers, editors, container runtimes) live in a personal overlay.
 set -uo pipefail
 [ -z "${OS_TYPE:-}" ] && source "${DOTFILES_DIR:-.}/lib/detect.sh"
 source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
@@ -20,7 +20,7 @@ echo "[04] Apps..."
 
 if [ "$OS_TYPE" = "Darwin" ]; then
   # Programming font (used by editors/terminals). Ghostty + its config/theme and
-  # the default-terminal setting now live in the private overlay (every macOS
+  # the default-terminal setting now live in a personal overlay (every macOS
   # already ships Terminal.app, so a terminal isn't a base/public concern).
   [ "${DRY_RUN:-0}" != 1 ] && tx_brew_cask font-jetbrains-mono
   run brew install --cask font-jetbrains-mono

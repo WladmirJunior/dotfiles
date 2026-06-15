@@ -46,14 +46,11 @@ done
 
 command -v tart >/dev/null 2>&1 || { echo "tart not found (brew install cirruslabs/cli/tart)"; exit 1; }
 
-# Decide networking: if user didn't override, auto-detect work mac and use
-# bridged on en0 to bypass Zscaler. Personal/non-work machines get the default
-# shared NAT (no extra flags).
+# Decide networking: if user didn't override, default to shared NAT. On a managed
+# Mac (where a VPN may hijack shared NAT), export IS_WORK_MAC=1 to switch to
+# bridged on en0.
 if [ -z "$NET" ]; then
-  if [ -d "/Library/Application Support/JAMF" ] \
-    || [ -f "/Library/LaunchDaemons/com.zscaler.tunnel.plist" ] \
-    || [[ "$(hostname -s 2>/dev/null)" == *nubank* ]] \
-    || [[ "$(hostname -s 2>/dev/null)" == wladmir-* ]]; then
+  if [ "${IS_WORK_MAC:-0}" = 1 ]; then
     NET="bridged=en0"
   else
     NET="shared"

@@ -91,17 +91,6 @@ Standard vars: `OS_TYPE`, `ARCH`, `IS_VM`, `HEADLESS`, `IS_WORK_MAC`,
 `HOST_SHORT`, `GIT_NAME`, `GIT_EMAIL`. Set in `lib/detect.sh` /
 `lib/template.sh::detect_template`.
 
-### Sync across machines
-
-`scripts/dotfiles-sync.sh` keeps the synchronized repo set (`.dotfiles`,
-`.***REMOVED***`, `.***REMOVED***` on work mac, `~/dev/sonus`) in step:
-
-```bash
-./scripts/dotfiles-sync.sh --status   # ahead/behind/dirty per repo
-./scripts/dotfiles-sync.sh --pull     # pull --ff-only on every repo
-./scripts/dotfiles-sync.sh            # interactive: pull, then prompt-per-repo commit & push
-```
-
 ### Provision a fresh VM
 
 One command clones a VM and provisions it with these dotfiles:

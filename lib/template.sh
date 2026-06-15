@@ -7,8 +7,8 @@
 # with `bash -c '...'` so BASH_REMATCH and `[[ =~ ]]` behave as expected.
 #
 # Renders .tmpl files with variable substitution and conditional blocks.
-# Avoids duplicating files across dotfiles-public/private/nu just for a few
-# environment-specific lines.
+# Avoids duplicating files across machines just for a few environment-specific
+# lines.
 #
 # Syntax in .tmpl files:
 #   ${VAR_NAME}                  — variable expansion (envsubst-style)
@@ -34,27 +34,15 @@ set -uo pipefail
 # detect_template: export template-friendly vars beyond what detect.sh provides.
 # Call after sourcing detect.sh. Idempotent.
 detect_template() {
-  # IS_WORK_MAC: 1 if this is a corporate Mac (Nubank). Heuristic: corporate
-  # certs from Zscaler/Jamf MDM are present. Falls back to hostname check.
-  IS_WORK_MAC=0
-  if [ "$OS_TYPE" = "Darwin" ]; then
-    if [ -d "/Library/Application Support/JAMF" ] \
-      || [ -f "/Library/LaunchDaemons/com.zscaler.tunnel.plist" ] \
-      || [[ "$(hostname -s 2>/dev/null)" == *nubank* ]] \
-      || [[ "$(hostname -s 2>/dev/null)" == wladmir-* ]]; then
-      IS_WORK_MAC=1
-    fi
-  fi
+  # IS_WORK_MAC: 1 if this is a managed/corporate Mac. Set it explicitly via the
+  # environment when needed; defaults to 0. Personal overlays can export it.
+  IS_WORK_MAC="${IS_WORK_MAC:-0}"
 
   HOST_SHORT="$(hostname -s 2>/dev/null || echo unknown)"
 
   # Git identity defaults. Override via env before calling render().
   GIT_NAME="${GIT_NAME:-Wladmir Junior}"
-  if [ "$IS_WORK_MAC" = 1 ]; then
-    GIT_EMAIL="${GIT_EMAIL:-wladmir.silva@nubank.com.br}"
-  else
-    GIT_EMAIL="${GIT_EMAIL:-wladmirjunior@users.noreply.github.com}"
-  fi
+  GIT_EMAIL="${GIT_EMAIL:-wladmirjunior@users.noreply.github.com}"
 
   export IS_WORK_MAC HOST_SHORT GIT_NAME GIT_EMAIL
 }
