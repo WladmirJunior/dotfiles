@@ -185,14 +185,20 @@ choose1() {  # choose1 "Header" opt...  → single choice (echoes the picked opt
   else echo "$1"; fi
 }
 pick() {  # pick "Header" opt...  → multi choice ([ ]/[x]); comma-joined or 'none'
+  # Pre-select items by exporting PICK_SELECTED to a comma-separated list of the
+  # exact option strings that should start checked (e.g. PICK_SELECTED="a,b").
+  # Cleared after each call so it doesn't leak to the next pick.
   local h="$1"; shift
   if have_gum; then
+    local sel_args=()
+    [ -n "${PICK_SELECTED:-}" ] && sel_args=(--selected="$PICK_SELECTED")
     local out; out=$("$GUM" choose --no-limit --header="${PAD}$h  (space select · enter confirm)" \
       --cursor="${PAD}> " --cursor.foreground=$THEME_ACCENT --header.foreground=$THEME_PRIMARY \
-      --selected.foreground=$THEME_SUCCESS \
+      --selected.foreground=$THEME_SUCCESS "${sel_args[@]}" \
       --cursor-prefix="${PAD}[ ] " --unselected-prefix="${PAD}[ ] " --selected-prefix="${PAD}[x] " "$@" </dev/tty)
+    PICK_SELECTED=""
     [ -z "$out" ] && { echo none; return; }; echo "$out" | paste -sd, -
-  else echo none; fi
+  else PICK_SELECTED=""; echo none; fi
 }
 confirm() {  # confirm "Question"  → exit status (yes=0)
   local q="$1"
