@@ -15,6 +15,7 @@ The installer detects the host (physical Mac, Mac VM, or Linux/VM) and skips GUI
 - command-not-found (Homebrew on macOS, apt on Linux)
 
 **Mac apps installed by default (physical Mac only):**
+- Ghostty (terminal)
 - Font: JetBrains Mono
 - Touch ID for sudo (pam_tid)
 
@@ -24,6 +25,8 @@ step at the end of the install.
 **Configs:**
 - `config/zsh/zshrc`: ZSH with aliases, prompt, history, modern unix tool replacements
 - `config/nvim/init.lua`: minimal Neovim config with system clipboard and persistent undo
+- `config/ghostty/config`: Ghostty terminal config
+- `config/ghostty/ghostty.terminfo`: terminfo for SSH sessions from Ghostty
 - `config/git/gitconfig`: git-delta colors and diff highlighting
 
 ## Usage

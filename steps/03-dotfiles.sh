@@ -52,20 +52,8 @@ EOF
 fi
 lnk "$D/config/nvim/init.lua"   "$HOME/.config/nvim/init.lua"
 
-# ghostty config + terminfo. Link it whenever Ghostty is installed (or its config
-# dir already exists) — don't gate on IS_VM: a desktop-profile VM with a UI gets
-# Ghostty too. 04-apps (desktop profile) installs Ghostty before this matters on
-# reruns; on first run the app may not be present yet, so also accept the dir.
-if [ -d /Applications/Ghostty.app ] || command -v ghostty >/dev/null 2>&1 || [ -d ~/.config/ghostty ]; then
-  lnk "$D/config/ghostty/config" "$HOME/.config/ghostty/config"
-  if ! infocmp xterm-ghostty >/dev/null 2>&1 && [ -f "$D/config/ghostty/ghostty.terminfo" ]; then
-    # tic compiles the entry into the terminfo db. Record it so the action is in
-    # the log; the undo is best-effort (no clean per-entry removal), so it's a
-    # no-op (true) rather than risking nuking unrelated terminfo data on rollback.
-    [ "${DRY_RUN:-0}" != 1 ] && tx_run "tic:xterm-ghostty" true --
-    run sudo tic -x "$D/config/ghostty/ghostty.terminfo" 2>/dev/null || run tic -x "$D/config/ghostty/ghostty.terminfo" 2>/dev/null || true
-  fi
-fi
+# Ghostty config/terminfo moved to the private overlay (a terminal isn't a base
+# concern — every macOS ships Terminal.app). See ***REMOVED*** 02-apps.
 
 # git config (delta) — cp because git include.path resolves symlinks fine,
 # but we keep it as a copy to avoid git reading a path inside the repo.

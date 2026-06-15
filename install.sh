@@ -105,7 +105,6 @@ verify_install() {
   command -v nvim >/dev/null 2>&1 && verify_cmd nvim
   verify_path "$HOME/.zshrc"
   [ -e "$HOME/.config/nvim/init.lua" ] && verify_link "$HOME/.config/nvim/init.lua"
-  [ -e "$HOME/.config/ghostty/config" ] && verify_link "$HOME/.config/ghostty/config"
   if [ "$VERIFY_FAILS" -eq 0 ]; then ok "all checks passed"
   else note "$VERIFY_FAILS check(s) failed — see FAIL lines above"; fi
   return "$VERIFY_FAILS"
