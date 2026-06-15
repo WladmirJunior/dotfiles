@@ -46,7 +46,12 @@ LAYOUT_MAXWIDTH=90      # cap the UI width on very wide terminals
 UI_GUM_USE_FORK=1                                  # 1 = fork binary, 0 = stock gum
 UI_GUM_REPO="WladmirJunior/gum"
 UI_GUM_TAG="v0.17.0-borderrow"
-UI_GUM_DIR="/opt/homebrew/var/gum-fork"            # Santa-allowed install path
+# Install the fork under ~/.local/share — Santa allows this path recursively
+# (same scope rule as /opt/homebrew), and unlike /opt/homebrew it ALWAYS exists
+# (creatable without root) even on a pristine machine where brew isn't installed
+# yet. The old /opt/homebrew/var path silently failed before step 01 installed
+# brew, dropping the first-run UI into the plain-printf fallback.
+UI_GUM_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gum-fork"
 UI_GUM_BIN="$UI_GUM_DIR/gum"
 
 # ui_gum_asset: the release asset name for this platform, or "" if unsupported.
