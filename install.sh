@@ -323,3 +323,8 @@ else
   [ "$OS_TYPE" = "Linux" ] && info "Restart your terminal to use zsh."
   [ "$OS_TYPE" = "Darwin" ] && info "Reload your shell to pick up the new config:  exec zsh"
 fi
+
+# Explicit success exit. Without it the script's exit code is that of the last
+# command run, which on Linux is a false `[ "$OS_TYPE" = "Darwin" ]` test (-> 1),
+# making a fully-successful install look like a failure to any caller checking $?.
+exit 0
