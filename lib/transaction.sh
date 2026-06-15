@@ -45,10 +45,10 @@ _tx_record() {
     args_json=$(printf '%s\n' "$@" | jq -R . | jq -cs .)
     printf '{"op":%s,"undo":%s}\n' "$(printf '%s' "$op" | jq -R .)" "$args_json" >> "$TX_LOG"
   else
-    OP="$op" python3 - "$@" >> "$TX_LOG" <<'PY'
-import json, os, sys
-print(json.dumps({"op": os.environ["OP"], "undo": sys.argv[1:]}, ensure_ascii=False))
-PY
+    # python fallback, via `-c` (no heredoc — see _tx_exec_undo note: heredocs
+    # inside export -f'd functions corrupt in child shells).
+    OP="$op" python3 -c 'import json,os,sys
+print(json.dumps({"op":os.environ["OP"],"undo":sys.argv[1:]},ensure_ascii=False))' "$@" >> "$TX_LOG"
   fi
 }
 
@@ -125,17 +125,20 @@ _tx_exec_undo() {
     echo "  undo: $op -> ${argv[*]}"
     "${argv[@]}" >/dev/null 2>&1 || echo "    (undo failed, skipping)"
   else
-    LINE="$line" python3 - <<'PY' || true
-import json, os, subprocess
+    # python fallback. NOTE: no heredoc here — a heredoc inside a function that
+    # gets `export -f`'d is re-serialized by bash and corrupts (the trailing
+    # `|| true` ends up after the PY terminator -> syntax error in child shells
+    # that inherit the exported function). Use `python3 -c` with the program as
+    # a single-quoted arg instead, which survives export -f intact.
+    LINE="$line" python3 -c 'import json,os,subprocess,sys
 try:
-    d = json.loads(os.environ["LINE"])
+    d=json.loads(os.environ["LINE"])
 except Exception:
-    raise SystemExit(0)
-undo = d.get("undo") or []
-if undo:
-    print("  undo: %s -> %s" % (d.get("op", "?"), " ".join(undo)))
-    subprocess.run(undo, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-PY
+    sys.exit(0)
+u=d.get("undo") or []
+if u:
+    print("  undo: %s -> %s" % (d.get("op","?")," ".join(u)))
+    subprocess.run(u,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)' || true
   fi
 }
 
