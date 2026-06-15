@@ -18,23 +18,28 @@ echo "[01] CLI packages..."
 if [ "$OS_TYPE" = "Darwin" ]; then
   if ! command -v brew >/dev/null 2>&1; then
     echo "Installing Homebrew..."
-    # Force NONINTERACTIVE: the brew installer otherwise tries to call
-    # `read` on stdin to confirm, but under `curl|bash` stdin is the pipe
-    # carrying our own script — the read drains the pipe and the installer
-    # aborts mid-flight, leaving /opt/homebrew/ created but no `brew`
-    # binary. NONINTERACTIVE=1 skips the prompt and uses defaults.
-    # Also unset INTERACTIVE in case the user's profile exported it
-    # (the brew installer treats $INTERACTIVE=1 as a hard override that
-    # overrides our detected non-tty stdin).
+    # The Homebrew installer reads stdin twice: once for "Press RETURN to
+    # continue" and again when sudo prompts for the password. Under `curl|bash`
+    # stdin is the PIPE carrying our own script, so those reads drain the pipe
+    # and the installer aborts mid-flight (and sudo can never prompt).
+    #
+    # The right fix is to give the installer the TERMINAL as stdin (`< /dev/tty`)
+    # so it reads keystrokes from the keyboard — the RETURN confirm works AND
+    # sudo can prompt for the admin password, without touching our pipe. We only
+    # fall back to NONINTERACTIVE (no prompts, defaults) when there is genuinely
+    # no terminal (real automation: CI, `tart exec`, etc.), where sudo must
+    # already be passwordless or pre-authenticated.
     if [ "${DRY_RUN:-0}" = 1 ]; then
-      echo "[dry-run] NONINTERACTIVE=1 unset INTERACTIVE  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+      echo "[dry-run] install Homebrew (interactive via /dev/tty, or NONINTERACTIVE if no tty)"
     else
-      # Record that we are about to create the whole Homebrew prefix, so a later
-      # failure rolls it back (rm -rf /opt/homebrew) rather than leaving a
-      # half-installed prefix that traps every future run.
+      # Record the prefix first so a failed install rolls back (rm -rf /opt/homebrew).
       tx_brew_self
-      env -u INTERACTIVE NONINTERACTIVE=1 /bin/bash -c \
-        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      brew_installer="$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      if [ -r /dev/tty ]; then
+        /bin/bash -c "$brew_installer" < /dev/tty
+      else
+        env -u INTERACTIVE NONINTERACTIVE=1 /bin/bash -c "$brew_installer"
+      fi
       eval "$(/opt/homebrew/bin/brew shellenv)"
     fi
   fi
