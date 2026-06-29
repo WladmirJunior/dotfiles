@@ -97,4 +97,32 @@ if [ -z "$(git config --global user.name)" ] && [ "${INTERACTIVE:-no}" = "yes" ]
   git config --global user.name "$GIT_NAME"
   git config --global user.email "$GIT_EMAIL"
 fi
+
+# Dev dirs. ~/dev is the real working dir (consistent on macOS and Linux). On
+# macOS, ~/Developer is a symlink to ~/dev so the folder shows with the standard
+# Mac icon while the real content lives in one place. Idempotent: if ~/Developer
+# is already a real dir with content, leave it and just warn (a one-time manual
+# merge is safer than moving files automatically).
+run mkdir -p "$HOME/dev"
+if [ "$OS_TYPE" = "Darwin" ]; then
+  if [ -L "$HOME/Developer" ] || [ ! -e "$HOME/Developer" ]; then
+    run ln -sfn "$HOME/dev" "$HOME/Developer"
+  else
+    note "~/Developer is a real directory; leaving it. Merge into ~/dev manually, then: ln -sfn ~/dev ~/Developer"
+  fi
+fi
+
+# timeout: BSD macOS has no `timeout`; coreutils (installed in 01-packages)
+# ships it as `gtimeout`. Symlink the bare name into ~/.local/bin so scripts that
+# reach for `timeout` (the Claude Code harness pushes toward it) just work.
+if [ "$OS_TYPE" = "Darwin" ]; then
+  GTIMEOUT="/opt/homebrew/opt/coreutils/libexec/gnubin/timeout"
+  [ -e "$GTIMEOUT" ] || GTIMEOUT="$(command -v gtimeout 2>/dev/null)"
+  if [ -n "$GTIMEOUT" ] && [ -e "$GTIMEOUT" ]; then
+    run mkdir -p "$HOME/.local/bin"
+    run ln -sfn "$GTIMEOUT" "$HOME/.local/bin/timeout"
+  else
+    note "coreutils timeout not found; skipping ~/.local/bin/timeout symlink"
+  fi
+fi
 echo "[03] done"

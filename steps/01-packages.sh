@@ -55,7 +55,10 @@ if [ "$OS_TYPE" = "Darwin" ]; then
 
   # Record the formulae before installing so a later-step failure can uninstall
   # exactly what this run added.
-  BREW_PKGS="git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils"
+  # coreutils: GNU userland. Provides `timeout` (BSD macOS lacks it), which the
+  # Claude Code harness pushes scripts toward after it blocked foreground `sleep`.
+  # 03-dotfiles symlinks gtimeout -> ~/.local/bin/timeout so the bare name works.
+  BREW_PKGS="git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils coreutils"
   [ "${DRY_RUN:-0}" != 1 ] && tx_brew_install $BREW_PKGS
   # gum is NOT installed here: the UI uses our fork binary (table --width/
   # --border-row), fetched by ui_bootstrap_gum in install.sh. See lib/ui.sh.
