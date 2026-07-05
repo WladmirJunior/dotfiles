@@ -59,6 +59,12 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   # Claude Code harness pushes scripts toward after it blocked foreground `sleep`.
   # 03-dotfiles symlinks gtimeout -> ~/.local/bin/timeout so the bare name works.
   BREW_PKGS="git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils coreutils"
+  # tlrc and tldr both ship a `tldr` binary; a legacy `tldr` install (older setups)
+  # makes `brew install tlrc` abort with a conflict. Drop it first so tlrc wins.
+  if [ "${DRY_RUN:-0}" != 1 ] && brew list --formula 2>/dev/null | grep -qx tldr; then
+    run brew unlink tldr
+    run brew uninstall tldr
+  fi
   [ "${DRY_RUN:-0}" != 1 ] && tx_brew_install $BREW_PKGS
   # gum is NOT installed here: the UI uses our fork binary (table --width/
   # --border-row), fetched by ui_bootstrap_gum in install.sh. See lib/ui.sh.

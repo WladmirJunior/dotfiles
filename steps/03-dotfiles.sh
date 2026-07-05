@@ -37,7 +37,16 @@ if [ ! -f "$HOME/.zshrc" ] || [ -L "$HOME/.zshrc" ] || ! grep -q '.dotfiles/conf
   else
     # Record an undo BEFORE overwriting: back up any existing ~/.zshrc and restore
     # it on rollback; if there was none, the undo just removes the file we write.
-    if [ -e "$HOME/.zshrc" ]; then
+    if [ -L "$HOME/.zshrc" ]; then
+      # A symlink here (e.g. ~/.zshrc -> repo) would make `cat >` write THROUGH
+      # the link into the repo file, turning config/zsh/zshrc into a stub that
+      # sources itself (infinite loop -> "too many open files"). Snapshot the
+      # link target for rollback, then drop the link so we write a real file.
+      _zbak="$HOME/.zshrc.txbak.$$"
+      _zlink="$(readlink "$HOME/.zshrc")"
+      tx_run "write:.zshrc" ln -sfn "$_zlink" "$HOME/.zshrc" -- true
+      rm -f "$HOME/.zshrc"
+    elif [ -e "$HOME/.zshrc" ]; then
       _zbak="$HOME/.zshrc.txbak.$$"
       cp -p "$HOME/.zshrc" "$_zbak" 2>/dev/null || cp "$HOME/.zshrc" "$_zbak"
       tx_run "write:.zshrc" mv "$_zbak" "$HOME/.zshrc" -- true
