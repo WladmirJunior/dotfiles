@@ -17,6 +17,19 @@ alias lt='eza --tree --icons'
 # (bat / rg / fd are installed and callable directly).
 alias help='tldr'
 
+# Let Yazi return its final directory to the current shell. The standalone
+# `yazi` command remains available when directory switching is not desired.
+y() {
+    local tmp cwd yazi_status
+    tmp="$(mktemp -t 'yazi-cwd.XXXXXX')" || return 1
+    command yazi "$@" --cwd-file="$tmp"
+    yazi_status=$?
+    cwd="$(<"$tmp")"
+    rm -f -- "$tmp"
+    [[ -n "$cwd" && "$cwd" != "$PWD" ]] && builtin cd -- "$cwd"
+    return "$yazi_status"
+}
+
 # ─────────────────────────── Git ───────────────────────────
 alias gst='git status'
 alias ga='git add'
