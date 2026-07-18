@@ -18,7 +18,6 @@ alias lt='eza --tree --icons'
 alias help='tldr'
 
 # ─────────────────────────── Git ───────────────────────────
-alias g='git'
 alias gst='git status'
 alias ga='git add'
 alias gaa='git add --all'
