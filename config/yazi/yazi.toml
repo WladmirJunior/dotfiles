@@ -1,0 +1,23 @@
+# Keep Enter focused on terminal editing, while the interactive opener (`O`)
+# can delegate text and code files to the operating system's default app.
+[opener]
+edit = [
+  { run = '${EDITOR:-vi} %s', desc = "Neovim", for = "unix", block = true },
+]
+
+[open]
+prepend_rules = [
+  { mime = "text/*", use = [ "edit", "open", "reveal" ] },
+  { mime = "application/{json,ndjson,javascript,wine-extension-ini}", use = [ "edit", "open", "reveal" ] },
+  { mime = "inode/empty", use = [ "edit", "open", "reveal" ] },
+]
+
+[[plugin.prepend_fetchers]]
+url = "*"
+run = "git"
+group = "git"
+
+[[plugin.prepend_fetchers]]
+url = "*/"
+run = "git"
+group = "git"

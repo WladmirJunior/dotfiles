@@ -60,6 +60,21 @@ EOF
   fi
 fi
 lnk "$D/config/nvim/init.lua"   "$HOME/.config/nvim/init.lua"
+lnk "$D/config/yazi/init.lua" "$HOME/.config/yazi/init.lua"
+lnk "$D/config/yazi/package.toml" "$HOME/.config/yazi/package.toml"
+lnk "$D/config/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"
+
+if command -v ya >/dev/null 2>&1; then
+  YAZI_PLUGIN="$HOME/.config/yazi/plugins/git.yazi"
+  if [ "${DRY_RUN:-0}" = 1 ]; then
+    run env YAZI_CONFIG_HOME="$HOME/.config/yazi" ya pkg install --discard
+  elif [ ! -d "$YAZI_PLUGIN" ]; then
+    tx_run "yazi-plugin:git" rm -rf "$YAZI_PLUGIN" -- \
+      env YAZI_CONFIG_HOME="$HOME/.config/yazi" ya pkg install --discard
+  else
+    env YAZI_CONFIG_HOME="$HOME/.config/yazi" ya pkg install --discard
+  fi
+fi
 
 # Ghostty config/terminfo moved to a personal overlay (a terminal isn't a base
 # concern; every macOS ships Terminal.app).
