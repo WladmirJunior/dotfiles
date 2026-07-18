@@ -58,7 +58,7 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   # coreutils: GNU userland. Provides `timeout` (BSD macOS lacks it), which the
   # Claude Code harness pushes scripts toward after it blocked foreground `sleep`.
   # 03-dotfiles symlinks gtimeout -> ~/.local/bin/timeout so the bare name works.
-  BREW_PKGS="git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils coreutils"
+  BREW_PKGS="git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils coreutils yazi hexyl fastfetch"
   # tlrc and tldr both ship a `tldr` binary; a legacy `tldr` install (older setups)
   # makes `brew install tlrc` abort with a conflict. Drop it first so tlrc wins.
   if [ "${DRY_RUN:-0}" != 1 ] && brew list --formula 2>/dev/null | grep -qx tldr; then
@@ -79,9 +79,21 @@ elif [ "$OS_TYPE" = "Linux" ]; then
   # Install in two passes so a missing package in one distro (e.g. trixie removed
   # `software-properties-common` from the default repo) doesn't drop the rest.
   # First pass: core tools that must be there. Second pass: nice-to-haves, best-effort.
-  APT_CORE="zsh neovim fzf zoxide bat ripgrep fd-find git-delta nodejs npm curl git gh wget"
+  APT_CORE="zsh neovim fzf zoxide bat ripgrep fd-find git-delta nodejs npm curl git gh wget hexyl"
   [ "${DRY_RUN:-0}" != 1 ] && tx_apt_install $APT_CORE
   run $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y $APT_CORE
+  # Yazi is not packaged by every supported Debian/Ubuntu release. Install the
+  # official architecture-specific .deb and verify GitHub's published digest.
+  if ! command -v yazi >/dev/null 2>&1; then
+    [ "${DRY_RUN:-0}" != 1 ] && tx_apt_install yazi
+    run bash "${DOTFILES_DIR:?}/scripts/install-yazi.sh"
+  fi
+  # Fastfetch package availability also varies by distribution. Use its
+  # verified official .deb when it is not already present.
+  if ! command -v fastfetch >/dev/null 2>&1; then
+    [ "${DRY_RUN:-0}" != 1 ] && tx_apt_install fastfetch
+    run bash "${DOTFILES_DIR:?}/scripts/install-fastfetch.sh"
+  fi
   # Best-effort extras; never abort if one is missing in this distro.
   for pkg in eza tealdeer software-properties-common; do
     if run $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" 2>/dev/null; then

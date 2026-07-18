@@ -6,7 +6,7 @@ The installer detects the host (physical Mac, Mac VM, or Linux/VM) and skips GUI
 
 ## What's included
 
-**CLI tools:** git, Neovim, fzf, zoxide, eza, bat, ripgrep, fd, git-delta, tldr
+**CLI tools:** git, Neovim, fzf, zoxide, eza, bat, ripgrep, fd, git-delta, tldr, Yazi, hexyl, Fastfetch
 
 **ZSH plugins:**
 - [fast-syntax-highlighting](https://github.com/zdharma-continuum/fast-syntax-highlighting)
@@ -111,6 +111,8 @@ For Linux VMs, `config/cloud-init/` has first-boot seeds (`user-data.arch`,
 - `steps/`: `01-packages` (CLI), `02-shell` (fzf+plugins), `03-dotfiles` (configs), `04-apps` (GUI, desktop only).
 - `profiles/`: step list per machine type.
 - `scripts/provision-vm.sh`: clone + provision a tart VM hands-off (macOS, via `tart exec`).
+- `scripts/install-yazi.sh`: installs the verified official Yazi `.deb` when the Linux distribution does not package it.
+- `scripts/install-fastfetch.sh`: installs the verified official Fastfetch `.deb` when the Linux distribution does not package it.
 - `config/cloud-init/`: first-boot seeds for Linux VMs (Arch, Kali).
 
 The installer detects VM (skips GUI apps), headless (skips GUI on Linux), and TTY: interactive mode prompts for opt-in apps; via `curl|bash` (no TTY) uses defaults.

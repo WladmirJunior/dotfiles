@@ -98,7 +98,7 @@ elif [ "$OS_TYPE" = "Darwin" ]; then
   # SIGPIPE (141) when grep exits early, silently skipping installed packages.
   BREW_INSTALLED="$(brew list --formula 2>/dev/null)"
   BREW_CASKS="$(brew list --cask 2>/dev/null)"
-  BREW_PKGS="git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils coreutils"
+  BREW_PKGS="git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils coreutils yazi hexyl fastfetch"
   for pkg in $BREW_PKGS; do
     grep -qx "$pkg" <<<"$BREW_INSTALLED" || continue
     run brew uninstall "$pkg" 2>/dev/null && note "uninstalled: $pkg" \
@@ -111,7 +111,7 @@ elif [ "$OS_TYPE" = "Darwin" ]; then
 elif [ "$OS_TYPE" = "Linux" ]; then
   task "apt packages"
   SUDO=""; [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO=sudo
-  APT_PKGS="neovim fzf zoxide bat ripgrep fd-find git-delta eza tealdeer"
+  APT_PKGS="neovim fzf zoxide bat ripgrep fd-find git-delta eza tealdeer yazi hexyl fastfetch"
   # zsh/git/curl/nodejs stay: likely predate the dotfiles or are system deps.
   run $SUDO apt-get remove -y $APT_PKGS 2>/dev/null || note "some apt packages kept"
   run $SUDO apt-get autoremove -y 2>/dev/null || true
