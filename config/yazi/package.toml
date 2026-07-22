@@ -4,9 +4,9 @@ rev = "bb758e2"
 hash = "88e56a64b7ce7c4314427452343fef17"
 
 [[plugin.deps]]
-use = "Reledia/glow"
-rev = "bd3eaa5"
-hash = "92b5c58159a51c567f82b618cee2b78"
+use = "yazi-rs/plugins:piper"
+rev = "bbac5e7"
+hash = "e0d59bd47866a6a574c74574097e5070"
 
 [flavor]
 deps = []
