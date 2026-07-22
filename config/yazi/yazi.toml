@@ -14,7 +14,7 @@ prepend_rules = [
 
 # Render Markdown previews with glow (Reledia/glow plugin, deps in package.toml).
 [[plugin.prepend_previewers]]
-name = "*.md"
+url = "*.md"
 run = "glow"
 
 [[plugin.prepend_fetchers]]
