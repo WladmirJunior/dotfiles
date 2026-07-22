@@ -4,9 +4,14 @@
 edit = [
   { run = '${EDITOR:-vi} %s', desc = "Neovim", for = "unix", block = true },
 ]
+glow = [
+  { run = 'glow --pager %s', desc = "Glow", for = "unix", block = true },
+]
 
 [open]
 prepend_rules = [
+  # Markdown opens rendered in glow's pager; `O` still offers Neovim via "edit".
+  { url = "*.md", use = [ "glow", "edit", "open", "reveal" ] },
   { mime = "text/*", use = [ "edit", "open", "reveal" ] },
   { mime = "application/{json,ndjson,javascript,wine-extension-ini}", use = [ "edit", "open", "reveal" ] },
   { mime = "inode/empty", use = [ "edit", "open", "reveal" ] },
