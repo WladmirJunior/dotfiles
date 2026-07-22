@@ -12,6 +12,11 @@ prepend_rules = [
   { mime = "inode/empty", use = [ "edit", "open", "reveal" ] },
 ]
 
+# Render Markdown previews with glow (Reledia/glow plugin, deps in package.toml).
+[[plugin.prepend_previewers]]
+name = "*.md"
+run = "glow"
+
 [[plugin.prepend_fetchers]]
 url = "*"
 run = "git"

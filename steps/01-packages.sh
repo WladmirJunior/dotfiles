@@ -58,7 +58,7 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   # coreutils: GNU userland. Provides `timeout` (BSD macOS lacks it), which the
   # Claude Code harness pushes scripts toward after it blocked foreground `sleep`.
   # 03-dotfiles symlinks gtimeout -> ~/.local/bin/timeout so the bare name works.
-  BREW_PKGS="git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils coreutils yazi hexyl fastfetch sevenzip resvg exiftool"
+  BREW_PKGS="git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils coreutils yazi hexyl fastfetch sevenzip resvg exiftool glow"
   # tlrc and tldr both ship a `tldr` binary; a legacy `tldr` install (older setups)
   # makes `brew install tlrc` abort with a conflict. Drop it first so tlrc wins.
   if [ "${DRY_RUN:-0}" != 1 ] && brew list --formula 2>/dev/null | grep -qx tldr; then
@@ -95,7 +95,7 @@ elif [ "$OS_TYPE" = "Linux" ]; then
     run bash "${DOTFILES_DIR:?}/scripts/install-fastfetch.sh"
   fi
   # Best-effort extras; never abort if one is missing in this distro.
-  for pkg in eza tealdeer 7zip resvg libimage-exiftool-perl software-properties-common; do
+  for pkg in eza tealdeer 7zip resvg libimage-exiftool-perl software-properties-common glow; do
     if run $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" 2>/dev/null; then
       [ "${DRY_RUN:-0}" != 1 ] && tx_apt_install "$pkg"
     else
