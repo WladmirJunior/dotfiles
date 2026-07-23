@@ -70,6 +70,32 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   # gum is NOT installed here: the UI uses our fork binary (table --width/
   # --border-row), fetched by ui_bootstrap_gum in install.sh. See lib/ui.sh.
   run brew install $BREW_PKGS
+
+  # Optional Neovim toolchain (LSP servers and formatters). The nvim config
+  # enables each one only when its binary exists, so skipping any is safe.
+  # Interactive multi-select; already-installed ones are filtered out. With no
+  # TTY (CI, tart exec) `pick` degrades to 'none' and the step moves on.
+  NVIM_OPT_PKGS="bash-language-server clojure-lsp/brew/clojure-lsp-native gopls shfmt jq"
+  if [ "${DRY_RUN:-0}" != 1 ] && command -v pick >/dev/null 2>&1; then
+    nvim_opt_missing=""
+    for pkg in $NVIM_OPT_PKGS; do
+      command -v "$(basename "$pkg" | sed 's/-native$//')" >/dev/null 2>&1 \
+        || nvim_opt_missing="$nvim_opt_missing $pkg"
+    done
+    if [ -n "$nvim_opt_missing" ]; then
+      # shellcheck disable=SC2086
+      PICK_SELECTED="$(echo $nvim_opt_missing | tr ' ' ',')"
+      # shellcheck disable=SC2086
+      picked=$(pick "Optional Neovim LSPs/formatters" $nvim_opt_missing)
+      if [ "$picked" != none ] && [ -n "$picked" ]; then
+        picked_pkgs="$(echo "$picked" | tr ',' ' ')"
+        # shellcheck disable=SC2086
+        [ "${DRY_RUN:-0}" != 1 ] && tx_brew_install $picked_pkgs
+        # shellcheck disable=SC2086
+        run brew install $picked_pkgs
+      fi
+    fi
+  fi
 elif [ "$OS_TYPE" = "Linux" ]; then
   # On a clean apt-based image we may run as root (no sudo). Pick the right prefix.
   SUDO=""
