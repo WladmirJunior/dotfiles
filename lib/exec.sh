@@ -14,6 +14,7 @@ run() {
 run_logged() {
   local label="$1" log="$2" rc
   shift 2
+  [ "${1:-}" = -- ] && shift
   mkdir -p "$(dirname "$log")"
 
   if [ "${DRY_RUN:-0}" = 1 ]; then
@@ -33,9 +34,13 @@ run_logged() {
 
   if [ "$rc" -ne 0 ]; then
     printf '%s\n' "$label failed; last log lines:" >&2
-    tail -n "${RUN_LOGGED_TAIL:-30}" "$log" >&2 2>/dev/null || true
+    tail -n "${RUN_LOG_TAIL_LINES:-${RUN_LOGGED_TAIL:-30}}" "$log" >&2 2>/dev/null || true
   fi
   return "$rc"
 }
 
-export -f run run_logged 2>/dev/null || true
+setup_log_dir() {
+  printf '%s\n' "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/install"
+}
+
+export -f run run_logged setup_log_dir 2>/dev/null || true
