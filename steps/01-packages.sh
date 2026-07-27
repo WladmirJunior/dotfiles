@@ -48,13 +48,14 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   # interrupted install), fail. The orchestrator's rollback will remove the
   # partial /opt/homebrew (recorded by tx_brew_self above) so the next run
   # starts clean — no manual `rm -rf` needed.
-  if [ "${DRY_RUN:-0}" != 1 ] && [ ! -x /opt/homebrew/bin/brew ]; then
-    echo "[01] ERROR: /opt/homebrew/bin/brew missing after install attempt." >&2
+  if [ "${DRY_RUN:-0}" != 1 ] && ! command -v brew >/dev/null 2>&1; then
+    echo "[01] ERROR: brew missing after install attempt." >&2
     exit 1
   fi
 
-  # Record the formulae before installing so a later-step failure can uninstall
-  # exactly what this run added.
+  # Install only missing formulae and upgrade only managed formulae that are
+  # outdated. This keeps repeat runs quiet and ensures rollback records only
+  # packages introduced by the current run.
   # coreutils: GNU userland. Provides `timeout` (BSD macOS lacks it), which the
   # Claude Code harness pushes scripts toward after it blocked foreground `sleep`.
   # 03-dotfiles symlinks gtimeout -> ~/.local/bin/timeout so the bare name works.
@@ -66,10 +67,50 @@ if [ "$OS_TYPE" = "Darwin" ]; then
     run brew unlink tldr
     run brew uninstall tldr
   fi
-  [ "${DRY_RUN:-0}" != 1 ] && tx_brew_install $BREW_PKGS
   # gum is NOT installed here: the UI uses our fork binary (table --width/
   # --border-row), fetched by ui_bootstrap_gum in install.sh. See lib/ui.sh.
-  run brew install $BREW_PKGS
+  if [ "${DRY_RUN:-0}" = 1 ]; then
+    run brew install $BREW_PKGS
+  else
+    brew_missing=""; brew_upgrade=""
+    brew_outdated="$(brew outdated --formula --quiet 2>/dev/null || true)"
+    for pkg in $BREW_PKGS; do
+      pkg_name="${pkg##*/}"
+      if ! brew list --formula "$pkg_name" >/dev/null 2>&1; then
+        brew_missing="${brew_missing:+$brew_missing }$pkg"
+      elif grep -qx "$pkg_name" <<<"$brew_outdated"; then
+        brew_upgrade="${brew_upgrade:+$brew_upgrade }$pkg"
+      fi
+    done
+    brew_log_dir="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/install"
+    brew_log="$brew_log_dir/homebrew.log"
+    mkdir -p "$brew_log_dir"
+    if [ -n "$brew_missing" ]; then
+      # shellcheck disable=SC2086
+      tx_brew_install $brew_missing
+      if command -v spin >/dev/null 2>&1; then
+        # shellcheck disable=SC2086
+        spin "Installing Homebrew packages · details in $brew_log" -- \
+          bash -c 'log=$1; shift; brew install "$@" >>"$log" 2>&1' _ "$brew_log" $brew_missing
+      else
+        # shellcheck disable=SC2086
+        brew install $brew_missing >>"$brew_log" 2>&1
+      fi || { tail -n 30 "$brew_log" >&2; exit 1; }
+      echo "  ✓ Homebrew packages installed"
+    fi
+    if [ -n "$brew_upgrade" ]; then
+      if command -v spin >/dev/null 2>&1; then
+        # shellcheck disable=SC2086
+        spin "Updating Homebrew packages · details in $brew_log" -- \
+          bash -c 'log=$1; shift; brew upgrade "$@" >>"$log" 2>&1' _ "$brew_log" $brew_upgrade
+      else
+        # shellcheck disable=SC2086
+        brew upgrade $brew_upgrade >>"$brew_log" 2>&1
+      fi || { tail -n 30 "$brew_log" >&2; exit 1; }
+      echo "  ✓ Homebrew packages updated"
+    fi
+    [ -n "$brew_missing$brew_upgrade" ] || echo "  ✓ Homebrew packages are current"
+  fi
 
   # Optional Neovim toolchain (LSP servers and formatters). The nvim config
   # enables each one only when its binary exists, so skipping any is safe.
