@@ -10,7 +10,7 @@ source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
 # failure. When the lib isn't sourced (step run standalone), the tx_* calls
 # below are stubbed to no-ops so the step still works on its own.
 [ -f "${DOTFILES_DIR:-.}/lib/transaction.sh" ] && source "${DOTFILES_DIR:-.}/lib/transaction.sh" 2>/dev/null || true
-for fn in tx_mkdir tx_symlink tx_run; do
+for fn in tx_mkdir tx_symlink tx_run tx_created_path tx_backup_path; do
   command -v "$fn" >/dev/null 2>&1 || eval "$fn() { :; }"
 done
 command -v run >/dev/null 2>&1 || run() { [ "${DRY_RUN:-0}" = 1 ] && { echo "[dry-run] $*"; return 0; }; "$@"; }
@@ -39,7 +39,8 @@ if [ ! -f "$HOME/.zshrc" ] || [ -L "$HOME/.zshrc" ] || ! grep -qF "$ZSH_CONFIG" 
     echo "[dry-run] write thin ~/.zshrc (sources $ZSH_CONFIG)"
   else
     # Record an undo BEFORE overwriting: back up any existing ~/.zshrc and restore
-    # it on rollback; if there was none, the undo just removes the file we write.
+    # it on rollback; if there was none, the undo moves the file we write to
+    # recoverable trash.
     if [ -L "$HOME/.zshrc" ]; then
       # A symlink here (e.g. ~/.zshrc -> repo) would make `cat >` write THROUGH
       # the link into the repo file, turning config/zsh/zshrc into a stub that
@@ -50,11 +51,11 @@ if [ ! -f "$HOME/.zshrc" ] || [ -L "$HOME/.zshrc" ] || ! grep -qF "$ZSH_CONFIG" 
       tx_run "write:.zshrc" ln -sfn "$_zlink" "$HOME/.zshrc" -- true
       rm -f "$HOME/.zshrc"
     elif [ -e "$HOME/.zshrc" ]; then
-      _zbak="$HOME/.zshrc.txbak.$$"
-      cp -p "$HOME/.zshrc" "$_zbak" 2>/dev/null || cp "$HOME/.zshrc" "$_zbak"
-      tx_run "write:.zshrc" mv "$_zbak" "$HOME/.zshrc" -- true
+      # tx_backup_path moves the file aside, restores it on rollback and parks
+      # the backup in recoverable trash on commit (no .txbak litter in $HOME).
+      tx_backup_path "write:.zshrc" "$HOME/.zshrc" "$HOME/.zshrc.txbak.$$"
     else
-      tx_run "write:.zshrc" rm -f "$HOME/.zshrc" -- true
+      tx_created_path "$HOME/.zshrc"
     fi
     printf '%s\n' \
       '# Managed by dotfiles. Public config lives in the repo; local overlays in ~/.zshrc.local.' \
@@ -71,8 +72,9 @@ if command -v ya >/dev/null 2>&1; then
   if [ "${DRY_RUN:-0}" = 1 ]; then
     run env YAZI_CONFIG_HOME="$HOME/.config/yazi" ya pkg install --discard
   elif [ ! -d "$YAZI_PLUGIN" ]; then
-    tx_run "yazi-plugin:git" rm -rf "$YAZI_PLUGIN" -- \
-      env YAZI_CONFIG_HOME="$HOME/.config/yazi" ya pkg install --discard
+    # Undo: move the plugin dir the install creates to recoverable trash.
+    tx_created_path "$YAZI_PLUGIN" yazi-plugin-git
+    env YAZI_CONFIG_HOME="$HOME/.config/yazi" ya pkg install --discard
   else
     env YAZI_CONFIG_HOME="$HOME/.config/yazi" ya pkg install --discard
   fi
@@ -87,7 +89,8 @@ fi
 # edits) before copying, but only when the content actually differs.
 DELTA="$HOME/.gitconfig.delta"
 # Decide the undo for the cp below BEFORE we touch $DELTA: if it pre-exists, snapshot
-# it and restore on rollback; otherwise the undo just removes the file we create.
+# it and restore on rollback; otherwise the undo moves the file we create to
+# recoverable trash.
 DELTA_PREEXISTED=0; _delta_bak=""
 if [ -e "$DELTA" ]; then
   DELTA_PREEXISTED=1; _delta_bak="$DELTA.txbak.$$"
@@ -102,11 +105,13 @@ if [ "${DRY_RUN:-0}" = 1 ]; then
   run cp "$D/config/git/gitconfig" "$DELTA"
 else
   if [ "$DELTA_PREEXISTED" = 1 ]; then
-    cp -p "$DELTA" "$_delta_bak" 2>/dev/null || cp "$DELTA" "$_delta_bak"
-    tx_run "cp:.gitconfig.delta" mv "$_delta_bak" "$DELTA" -- cp "$D/config/git/gitconfig" "$DELTA"
+    # tx_backup_path moves the file aside, restores it on rollback and parks
+    # the backup in recoverable trash on commit (no .txbak litter in $HOME).
+    tx_backup_path "cp:.gitconfig.delta" "$DELTA" "$_delta_bak"
   else
-    tx_run "cp:.gitconfig.delta" rm -f "$DELTA" -- cp "$D/config/git/gitconfig" "$DELTA"
+    tx_created_path "$DELTA"
   fi
+  cp "$D/config/git/gitconfig" "$DELTA"
 fi
 if [ "${DRY_RUN:-0}" = 1 ]; then
   run git config --global include.path "$DELTA"

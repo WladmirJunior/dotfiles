@@ -7,7 +7,7 @@ source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
 # failure. When the lib isn't sourced (step run standalone), the tx_* calls
 # below are stubbed to no-ops so the step still works on its own.
 [ -f "${DOTFILES_DIR:-.}/lib/transaction.sh" ] && source "${DOTFILES_DIR:-.}/lib/transaction.sh" 2>/dev/null || true
-for fn in tx_git_clone tx_mkdir tx_run; do
+for fn in tx_git_clone tx_created_path tx_mkdir tx_run; do
   command -v "$fn" >/dev/null 2>&1 || eval "$fn() { :; }"
 done
 command -v run >/dev/null 2>&1 || run() { [ "${DRY_RUN:-0}" = 1 ] && { echo "[dry-run] $*"; return 0; }; "$@"; }
@@ -15,25 +15,25 @@ command -v run >/dev/null 2>&1 || run() { [ "${DRY_RUN:-0}" = 1 ] && { echo "[dr
 echo "[02] Shell (fzf, zsh plugins)..."
 
 # fzf's installers create ~/.fzf.zsh (and may append a source line to ~/.zshrc).
-# Record removal of ~/.fzf.zsh as the undo before any path that creates it, so a
-# later-step failure cleans up the generated file. Only record when we'd actually
-# create it (it wasn't already there) and not in dry-run.
+# Record ~/.fzf.zsh as a created path before any path that creates it, so a
+# later-step failure moves the generated file to recoverable trash. tx_created_path
+# only records when the file doesn't already exist; skip recording in dry-run.
 if [ "$OS_TYPE" = "Darwin" ]; then
-  [ "${DRY_RUN:-0}" != 1 ] && [ ! -e "$HOME/.fzf.zsh" ] && tx_run "fzf_install" rm -f "$HOME/.fzf.zsh" -- true
+  [ "${DRY_RUN:-0}" != 1 ] && tx_created_path "$HOME/.fzf.zsh"
   run "$(brew --prefix)/opt/fzf/install" --all --no-bash --no-fish
 else
   FZF_INSTALL=$(find /usr/share -name install.sh 2>/dev/null | grep fzf | head -n 1)
   if [ -n "$FZF_INSTALL" ]; then
-    [ "${DRY_RUN:-0}" != 1 ] && [ ! -e "$HOME/.fzf.zsh" ] && tx_run "fzf_install" rm -f "$HOME/.fzf.zsh" -- true
+    [ "${DRY_RUN:-0}" != 1 ] && tx_created_path "$HOME/.fzf.zsh"
     run bash "$FZF_INSTALL" --all --no-bash --no-fish
   elif fzf --zsh >/dev/null 2>&1; then
     if [ "${DRY_RUN:-0}" = 1 ]; then echo "[dry-run] fzf --zsh > ~/.fzf.zsh"; else
-      [ ! -e "$HOME/.fzf.zsh" ] && tx_run "fzf_zsh" rm -f "$HOME/.fzf.zsh" -- true
+      tx_created_path "$HOME/.fzf.zsh"
       fzf --zsh > ~/.fzf.zsh
     fi
   else
     if [ "${DRY_RUN:-0}" = 1 ]; then echo "[dry-run] assemble ~/.fzf.zsh from /usr/share/doc/fzf examples"; else
-    [ ! -e "$HOME/.fzf.zsh" ] && tx_run "fzf_zsh" rm -f "$HOME/.fzf.zsh" -- true
+    tx_created_path "$HOME/.fzf.zsh"
     {
       [ -f /usr/share/doc/fzf/examples/key-bindings.zsh ] && cat /usr/share/doc/fzf/examples/key-bindings.zsh
       [ -f /usr/share/doc/fzf/examples/completion.zsh ]   && cat /usr/share/doc/fzf/examples/completion.zsh
