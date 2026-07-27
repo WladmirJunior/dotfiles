@@ -278,7 +278,7 @@ tx_commit() {
     local line
     while IFS= read -r line; do _tx_exec_cleanup "$line"; done < "$TX_LOG"
   fi
-  [ -f "$TX_LOG" ] && mv "$TX_LOG" "$TX_LAST" 2>/dev/null || true
+  if [ -f "$TX_LOG" ]; then mv "$TX_LOG" "$TX_LAST" 2>/dev/null || true; fi
 }
 
 export -f tx_init _tx_seq _tx_have_jq _tx_record _tx_record_backup tx_brew_install tx_brew_cask \

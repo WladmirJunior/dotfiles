@@ -15,22 +15,22 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-[ -n "$repo" ] && [ -n "$label" ] && [ -n "$binary" ] \
-  && [ -n "$asset_amd64" ] && [ -n "$asset_arm64" ] || {
+if [ -z "$repo" ] || [ -z "$label" ] || [ -z "$binary" ] \
+  || [ -z "$asset_amd64" ] || [ -z "$asset_arm64" ]; then
   echo "Usage: $0 --repo OWNER/REPO --label NAME --binary COMMAND --asset-amd64 FILE --asset-arm64 FILE [--api URL]" >&2
   exit 2
-}
+fi
 case "$repo" in */*) ;; *) echo "$label: invalid GitHub repository: $repo" >&2; exit 2 ;; esac
 case "$repo" in
   *[!A-Za-z0-9._/-]*) echo "$label: invalid GitHub repository: $repo" >&2; exit 2 ;;
 esac
 repo_owner="${repo%%/*}"
 repo_name="${repo#*/}"
-[ -n "$repo_owner" ] && [ -n "$repo_name" ] && [ "$repo_name" != "$repo" ] \
-  && [[ "$repo_name" != */* ]] || {
+if [ -z "$repo_owner" ] || [ -z "$repo_name" ] || [ "$repo_name" = "$repo" ] \
+  || [[ "$repo_name" == */* ]]; then
   echo "$label: invalid GitHub repository: $repo" >&2
   exit 2
-}
+fi
 case "$asset_amd64:$asset_arm64" in
   *'/'*|*'..'*) echo "$label: release assets must be plain file names" >&2; exit 2 ;;
 esac
