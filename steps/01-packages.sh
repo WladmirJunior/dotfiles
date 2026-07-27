@@ -13,6 +13,10 @@ for fn in tx_brew_install tx_brew_cask tx_apt_install tx_pacman_install tx_dnf_i
 done
 command -v run >/dev/null 2>&1 || run() { [ "${DRY_RUN:-0}" = 1 ] && { echo "[dry-run] $*"; return 0; }; "$@"; }
 
+apt_package_installed() {
+  dpkg-query -W -f='${db:Status-Abbrev}' "$1" 2>/dev/null | grep -q '^ii'
+}
+
 echo "[01] CLI packages..."
 
 if [ "$OS_TYPE" = "Darwin" ]; then
@@ -148,7 +152,14 @@ elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "apt" ]; then
   # `software-properties-common` from the default repo) doesn't drop the rest.
   # First pass: core tools that must be there. Second pass: nice-to-haves, best-effort.
   APT_CORE="zsh neovim fzf zoxide bat ripgrep fd-find git-delta nodejs npm curl git gh wget hexyl"
-  [ "${DRY_RUN:-0}" != 1 ] && tx_apt_install $APT_CORE
+  if [ "${DRY_RUN:-0}" != 1 ]; then
+    APT_NEW=""
+    for pkg in $APT_CORE; do
+      apt_package_installed "$pkg" || APT_NEW="$APT_NEW $pkg"
+    done
+    # Rollback only packages introduced by this run, never pre-existing tools.
+    [ -n "$APT_NEW" ] && tx_apt_install $APT_NEW
+  fi
   run $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y $APT_CORE
   # Yazi is not packaged by every supported Debian/Ubuntu release. Install the
   # official architecture-specific .deb and verify GitHub's published digest.
@@ -164,8 +175,10 @@ elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "apt" ]; then
   fi
   # Best-effort extras; never abort if one is missing in this distro.
   for pkg in eza tealdeer 7zip resvg libimage-exiftool-perl software-properties-common glow; do
+    apt_was_installed=0
+    apt_package_installed "$pkg" && apt_was_installed=1
     if run $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" 2>/dev/null; then
-      [ "${DRY_RUN:-0}" != 1 ] && tx_apt_install "$pkg"
+      [ "${DRY_RUN:-0}" = 1 ] || [ "$apt_was_installed" = 1 ] || tx_apt_install "$pkg"
     else
       echo "  skip: $pkg not available in this distro"
     fi
