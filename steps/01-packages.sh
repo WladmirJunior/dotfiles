@@ -186,7 +186,13 @@ elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "pacman" ]; then
 
   # Arch forbids partial upgrades: -Syu refreshes databases and upgrades the
   # system before resolving this package set. --needed keeps re-runs idempotent.
-  PACMAN_CORE="zsh neovim fzf zoxide bat ripgrep fd git-delta nodejs npm curl git github-cli wget hexyl yazi fastfetch eza tealdeer 7zip resvg perl-image-exiftool glow pkgfile jq gum"
+  # Parity with BREW_PKGS above, minus what Arch already ships in base: GNU
+  # coreutils is a base dependency here (macOS needs brew for `timeout`), so it
+  # is deliberately absent. wishlist/vhs/tree-sitter-cli/lua-language-server/
+  # usbutils were macOS-only for a while purely because this list was never
+  # updated alongside BREW_PKGS. `freeze` has no official Arch package (AUR
+  # only) and stays out.
+  PACMAN_CORE="zsh neovim fzf zoxide bat ripgrep fd git-delta nodejs npm curl git github-cli wget hexyl yazi fastfetch eza tealdeer 7zip resvg perl-image-exiftool glow pkgfile jq gum wishlist vhs tree-sitter-cli lua-language-server usbutils"
   if [ "${DRY_RUN:-0}" != 1 ]; then
     PACMAN_NEW=""
     for pkg in $PACMAN_CORE; do
