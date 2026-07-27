@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Recoverable removal helpers shared by installer maintenance and rollback.
 
+# Quarantine root: SETUP_TRASH_DIR wins outright; otherwise honor the shared
+# agent quarantine root (AGENT_QUARANTINE_DIR) with ~/.cli-trash as fallback.
+# The segment is "dotfiles-installer" because the installer runs on its own,
+# outside any AI CLI.
 setup_trash_dir() {
   if [ -z "${SETUP_TRASH_DIR:-}" ]; then
-    SETUP_TRASH_DIR="$HOME/.cli-trash/codex/$(date +%s)-$$-dotfiles"
+    SETUP_TRASH_DIR="${AGENT_QUARANTINE_DIR:-$HOME/.cli-trash}/dotfiles-installer/$(date +%s)-$$-dotfiles"
   fi
   mkdir -p "$SETUP_TRASH_DIR"
   printf '%s\n' "$SETUP_TRASH_DIR"
@@ -25,7 +29,8 @@ setup_trash_destination() {
 }
 
 trash_path() {
-  local path="$1" label="${2:-$(basename "$1")}" dest
+  local path="$1" label dest
+  label="${2:-$(basename "$1")}"
   [ -e "$path" ] || [ -L "$path" ] || return 0
   setup_trash_dir >/dev/null
   dest="$(setup_trash_destination "$label")"

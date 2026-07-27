@@ -40,8 +40,15 @@ source "$TX_LIB_DIR/trash.sh"
 
 # tx_init: start a fresh transaction log for this run.
 tx_init() {
+  TX_SEQ=0
   : > "$TX_LOG" 2>/dev/null || { echo "tx: cannot write $TX_LOG" >&2; return 1; }
 }
+
+# _tx_seq: bump TX_SEQ, a per-transaction monotonic suffix for trash
+# destinations computed at record time. $RANDOM can repeat within one run and
+# make two undo entries share a destination; a counter cannot. Must be called
+# directly (not in a command substitution) so the increment sticks.
+_tx_seq() { TX_SEQ=$((${TX_SEQ:-0} + 1)); }
 
 _tx_have_jq() { command -v jq >/dev/null 2>&1; }
 
@@ -108,25 +115,35 @@ tx_dnf_install() {
 tx_brew_self() {
   local prefix="${HOMEBREW_PREFIX:-}"
   if [ -z "$prefix" ]; then
-    case "$(uname -m)" in arm64|aarch64) prefix=/opt/homebrew ;; *) prefix=/usr/local ;; esac
+    # Default prefix depends on OS and architecture, not architecture alone
+    # (Linux aarch64 is not /opt/homebrew).
+    case "$(uname -s):$(uname -m)" in
+      Darwin:arm64) prefix=/opt/homebrew ;;
+      Darwin:*) prefix=/usr/local ;;
+      *) prefix=/home/linuxbrew/.linuxbrew ;;
+    esac
   fi
   [ -e "$prefix" ] && return 0
   local trash_dest
   setup_trash_dir >/dev/null
-  trash_dest="$(setup_trash_destination "homebrew-prefix-$RANDOM")"
+  _tx_seq
+  trash_dest="$(setup_trash_destination "homebrew-prefix-$TX_SEQ")"
   _tx_record "brew_self:$prefix" mv "$prefix" "$trash_dest"
 }
 tx_git_clone() {  # url dest
   local trash_dest
   setup_trash_dir >/dev/null
-  trash_dest="$(setup_trash_destination "clone-$(basename "$2")-$RANDOM")"
+  _tx_seq
+  trash_dest="$(setup_trash_destination "clone-$(basename "$2")-$TX_SEQ")"
   _tx_record "git_clone:$2" mv "$2" "$trash_dest"
 }
 tx_created_path() {  # path [label]
-  local path="$1" label="${2:-created-$(basename "$1")}" trash_dest
+  local path="$1" label trash_dest
+  label="${2:-created-$(basename "$1")}"
   if [ -e "$path" ] || [ -L "$path" ]; then return 0; fi
   setup_trash_dir >/dev/null
-  trash_dest="$(setup_trash_destination "$label-$RANDOM")"
+  _tx_seq
+  trash_dest="$(setup_trash_destination "$label-$TX_SEQ")"
   _tx_record "created:$path" mv "$path" "$trash_dest"
 }
 tx_mkdir() {  # dir — only record if we actually create it
@@ -142,13 +159,15 @@ tx_symlink() {  # src dst
   elif [ -e "$dst" ]; then
     local trash_dest
     setup_trash_dir >/dev/null
-    trash_dest="$(setup_trash_destination "replaced-$(basename "$dst")-$RANDOM")"
+    _tx_seq
+    trash_dest="$(setup_trash_destination "replaced-$(basename "$dst")-$TX_SEQ")"
     mv "$dst" "$trash_dest"
     _tx_record "symlink:$dst" mv "$trash_dest" "$dst"
   else
     local new_link_trash
     setup_trash_dir >/dev/null
-    new_link_trash="$(setup_trash_destination "link-$(basename "$dst")-$RANDOM")"
+    _tx_seq
+    new_link_trash="$(setup_trash_destination "link-$(basename "$dst")-$TX_SEQ")"
     _tx_record "symlink:$dst" mv "$dst" "$new_link_trash"
   fi
   ln -sfn "$src" "$dst"
@@ -171,7 +190,8 @@ tx_run() {
 tx_backup_path() {
   local op="$1" path="$2" backup="$3" cleanup_dest
   setup_trash_dir >/dev/null
-  cleanup_dest="$(setup_trash_destination "backup-$(basename "$path")-$RANDOM")"
+  _tx_seq
+  cleanup_dest="$(setup_trash_destination "backup-$(basename "$path")-$TX_SEQ")"
   _tx_record_backup "$op" "$backup" "$cleanup_dest" mv "$backup" "$path"
   mv "$path" "$backup"
 }
@@ -261,7 +281,7 @@ tx_commit() {
   [ -f "$TX_LOG" ] && mv "$TX_LOG" "$TX_LAST" 2>/dev/null || true
 }
 
-export -f tx_init _tx_have_jq _tx_record _tx_record_backup tx_brew_install tx_brew_cask \
+export -f tx_init _tx_seq _tx_have_jq _tx_record _tx_record_backup tx_brew_install tx_brew_cask \
   tx_apt_install tx_pacman_install tx_dnf_install tx_brew_self tx_git_clone tx_created_path \
   tx_mkdir tx_symlink tx_run \
   tx_backup_path _tx_exec_undo _tx_exec_cleanup tx_rollback tx_commit 2>/dev/null || true

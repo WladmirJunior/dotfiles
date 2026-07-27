@@ -56,9 +56,10 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   fi
 
   # If brew install left the directory but no binary (the symptom of an
-  # interrupted install), fail. The orchestrator's rollback will remove the
-  # newly created prefix to recoverable trash (recorded by tx_brew_self above)
-  # so the next run starts clean.
+  # interrupted install), fail. When the prefix did not pre-exist (recorded by
+  # tx_brew_self above), the orchestrator's rollback moves it to recoverable
+  # trash so the next run starts clean. A pre-existing prefix (e.g. /usr/local
+  # on Intel macs) is never recorded, so rollback leaves it in place.
   if [ "${DRY_RUN:-0}" != 1 ] && ! command -v brew >/dev/null 2>&1; then
     echo "[01] ERROR: brew missing after install attempt." >&2
     exit 1
