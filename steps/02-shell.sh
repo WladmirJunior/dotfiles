@@ -46,8 +46,8 @@ fi
 # it). In dry-run it must not touch the disk, so fall back to the announce-only run().
 if [ "${DRY_RUN:-0}" = 1 ]; then run mkdir -p ~/.config/zsh-plugins; else tx_mkdir ~/.config/zsh-plugins; fi
 clone_plugin() {
-  # Record the clone's undo (rm -rf dest) before cloning so a later failure removes
-  # exactly what this run fetched. Skip recording in dry-run.
+  # Record the clone's undo (move dest to recoverable trash) before cloning so
+  # a later failure parks exactly what this run fetched. Skip recording in dry-run.
   [ -d "$2" ] || {
     echo "  cloning $(basename "$2")..."
     [ "${DRY_RUN:-0}" != 1 ] && tx_git_clone "$1" "$2"

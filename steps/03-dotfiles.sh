@@ -103,6 +103,8 @@ if [ -f "$DELTA" ] && ! cmp -s "$D/config/git/gitconfig" "$DELTA"; then
 fi
 if [ "${DRY_RUN:-0}" = 1 ]; then
   run cp "$D/config/git/gitconfig" "$DELTA"
+elif cmp -s "$D/config/git/gitconfig" "$DELTA" 2>/dev/null; then
+  : # already identical; no copy, no transactional backup to park in trash
 else
   if [ "$DELTA_PREEXISTED" = 1 ]; then
     # tx_backup_path moves the file aside, restores it on rollback and parks

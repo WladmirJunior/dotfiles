@@ -41,7 +41,7 @@ if [ "$OS_TYPE" = "Darwin" ]; then
       # BSD sed -i '': the empty suffix token would not survive the JSONL undo
       # round-trip.
       tx_run "pam_tid:sudo_local" sudo sh -c \
-        'grep -v pam_tid /etc/pam.d/sudo_local > /etc/pam.d/sudo_local.tx-tmp && mv /etc/pam.d/sudo_local.tx-tmp /etc/pam.d/sudo_local' \
+        '{ grep -v pam_tid /etc/pam.d/sudo_local || :; } > /etc/pam.d/sudo_local.tx-tmp && mv /etc/pam.d/sudo_local.tx-tmp /etc/pam.d/sudo_local' \
         -- true
       echo "auth sufficient pam_tid.so" | sudo tee -a /etc/pam.d/sudo_local >/dev/null
     else
