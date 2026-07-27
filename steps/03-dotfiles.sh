@@ -114,15 +114,10 @@ else
   # Undo: drop the include.path entry we add (best-effort; --unset on the exact value).
   tx_run "git_include_path" git config --global --unset include.path "$DELTA" -- git config --global include.path "$DELTA"
 fi
-if [ -z "$(git config --global user.name)" ] && [ "${INTERACTIVE:-no}" = "yes" ]; then
-  read -p "Git name: " GIT_NAME
-  read -p "Git email: " GIT_EMAIL
-  # Undo: unset the identity we just wrote (only set when previously empty).
-  [ "${DRY_RUN:-0}" != 1 ] && tx_run "git_user_name" git config --global --unset user.name -- true
-  [ "${DRY_RUN:-0}" != 1 ] && tx_run "git_user_email" git config --global --unset user.email -- true
-  git config --global user.name "$GIT_NAME"
-  git config --global user.email "$GIT_EMAIL"
-fi
+# Git identity is provisioned by the private overlay (***REMOVED*** step 01:
+# work machines auto-set, personal machines prompted with a default). Prompting
+# here too would double-ask, and a blank answer used to write an empty ident
+# that hard-fails commits.
 
 # Dev dirs. ~/dev is the real working dir (consistent on macOS and Linux). On
 # macOS, ~/Developer is a symlink to ~/dev so the folder shows with the standard
