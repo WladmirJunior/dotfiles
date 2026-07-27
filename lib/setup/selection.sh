@@ -19,15 +19,15 @@ _selection_csv_add() {
 }
 
 _selection_csv_has() {
-  case ",${1:-}," in
-    *",$2,"*) return 0 ;;
-    *) return 1 ;;
-  esac
+  printf '%s\n' "${1:-}" | tr ',' '\n' | grep -qxF -- "$2"
 }
 
 maintenance_select() {
   local detect_callback="$1" install_var="$2" remove_var="$3" header="$4"
   shift 4
+
+  case "$install_var" in ''|[0-9]*|*[!A-Za-z0-9_]*) return 2 ;; esac
+  case "$remove_var" in ''|[0-9]*|*[!A-Za-z0-9_]*) return 2 ;; esac
 
   local entries=("$@") labels=() installed_ids="" selected_labels=""
   local entry id label picked
@@ -38,7 +38,7 @@ maintenance_select() {
     id="${entry%%|*}"
     label="${entry#*|}"
     [ -n "$id" ] && [ "$label" != "$entry" ] || return 2
-    case "$label" in *,*) return 2 ;; esac
+    case "$id:$label" in *','*) return 2 ;; esac
     labels+=("$label")
     if "$detect_callback" "$id"; then
       _selection_csv_add installed_ids "$id"
@@ -53,7 +53,7 @@ maintenance_select() {
   if [ "${SELECTION_FORCE_PROMPT:-0}" != 1 ] && [ ! -t 0 ] && [ ! -t 1 ]; then return 0; fi
 
   PICK_SELECTED="$selected_labels"
-  picked="$(pick "$header" "${labels[@]}")"
+  picked="$(pick "$header" "${labels[@]}")" || return $?
   [ "$picked" = none ] && picked=""
 
   for entry in "${entries[@]}"; do

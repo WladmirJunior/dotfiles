@@ -24,6 +24,16 @@ case "$repo" in */*) ;; *) echo "$label: invalid GitHub repository: $repo" >&2; 
 case "$repo" in
   *[!A-Za-z0-9._/-]*) echo "$label: invalid GitHub repository: $repo" >&2; exit 2 ;;
 esac
+repo_owner="${repo%%/*}"
+repo_name="${repo#*/}"
+[ -n "$repo_owner" ] && [ -n "$repo_name" ] && [ "$repo_name" != "$repo" ] \
+  && [[ "$repo_name" != */* ]] || {
+  echo "$label: invalid GitHub repository: $repo" >&2
+  exit 2
+}
+case "$asset_amd64:$asset_arm64" in
+  *'/'*|*'..'*) echo "$label: release assets must be plain file names" >&2; exit 2 ;;
+esac
 release_api="${release_api:-https://api.github.com/repos/$repo/releases/latest}"
 
 CURL_BIN="${CURL_BIN:-curl}"

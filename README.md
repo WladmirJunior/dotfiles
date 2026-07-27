@@ -117,9 +117,14 @@ For Linux VMs, `config/cloud-init/` has first-boot seeds (`user-data.arch`,
 
 - `install.sh`: orchestrator. Detects environment, reads profile, runs steps.
 - `lib/detect.sh`: OS, Linux family/package manager, arch, VM/container, headless and TTY detection.
+- `lib/exec.sh`, `lib/step.sh`, `lib/state.sh`: shared execution, step-status and checkpoint contracts.
+- `lib/transaction.sh`: canonical rollback API (`DOTFILES_INSTALLER_API=1`) used by public and private installers.
+- `lib/packages/`: package-manager adapters; `config/packages.tsv` maps capabilities to each distribution's package names.
+- `lib/setup/selection.sh`: maintenance selector that starts with installed components selected and derives installs/removals from the final selection.
 - `steps/`: `01-packages` (CLI), `02-shell` (fzf+plugins), `03-dotfiles` (configs), `04-apps` (GUI, desktop only).
 - `profiles/`: step list per machine type.
 - `scripts/provision-vm.sh`: clone + provision a tart VM hands-off (macOS, via `tart exec`).
+- `scripts/install-github-release.sh`: shared verified GitHub Release installer used by distribution fallbacks.
 - `scripts/install-yazi.sh`: installs the verified official Yazi `.deb` when a Debian-family distribution does not package it.
 - `scripts/install-fastfetch.sh`: installs the verified official Fastfetch `.deb` when a Debian-family distribution does not package it.
 - `config/cloud-init/`: first-boot seeds for Linux VMs (Arch, Kali).
