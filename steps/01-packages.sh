@@ -3,11 +3,13 @@
 # Requires: DOTFILES_DIR in env.
 set -uo pipefail
 [ -z "${OS_TYPE:-}" ] && source "${DOTFILES_DIR:-.}/lib/detect.sh"
+source "${DOTFILES_DIR:-.}/lib/exec.sh" 2>/dev/null || true
 source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
 # Transaction helpers: record mutations so the orchestrator can roll back on
 # failure. When the lib isn't sourced (step run standalone), the tx_* calls
 # below are stubbed to no-ops so the step still works on its own.
 [ -f "${DOTFILES_DIR:-.}/lib/transaction.sh" ] && source "${DOTFILES_DIR:-.}/lib/transaction.sh" 2>/dev/null || true
+[ -f "${DOTFILES_DIR:-.}/lib/packages/brew.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/brew.sh" 2>/dev/null || true
 for fn in tx_brew_install tx_brew_cask tx_apt_install tx_pacman_install tx_dnf_install tx_brew_self; do
   command -v "$fn" >/dev/null 2>&1 || eval "$fn() { :; }"
 done
@@ -73,47 +75,13 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   fi
   # gum is NOT installed here: the UI uses our fork binary (table --width/
   # --border-row), fetched by ui_bootstrap_gum in install.sh. See lib/ui.sh.
-  if [ "${DRY_RUN:-0}" = 1 ]; then
-    run brew install $BREW_PKGS
-  else
-    brew_missing=""; brew_upgrade=""
-    brew_outdated="$(brew outdated --formula --quiet 2>/dev/null || true)"
-    for pkg in $BREW_PKGS; do
-      pkg_name="${pkg##*/}"
-      if ! brew list --formula "$pkg_name" >/dev/null 2>&1; then
-        brew_missing="${brew_missing:+$brew_missing }$pkg"
-      elif grep -qx "$pkg_name" <<<"$brew_outdated"; then
-        brew_upgrade="${brew_upgrade:+$brew_upgrade }$pkg"
-      fi
-    done
-    brew_log_dir="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/install"
-    brew_log="$brew_log_dir/homebrew.log"
-    mkdir -p "$brew_log_dir"
-    if [ -n "$brew_missing" ]; then
-      # shellcheck disable=SC2086
-      tx_brew_install $brew_missing
-      if command -v spin >/dev/null 2>&1; then
-        # shellcheck disable=SC2086
-        spin "Installing Homebrew packages · details in $brew_log" -- \
-          bash -c 'log=$1; shift; brew install "$@" >>"$log" 2>&1' _ "$brew_log" $brew_missing
-      else
-        # shellcheck disable=SC2086
-        brew install $brew_missing >>"$brew_log" 2>&1
-      fi || { tail -n 30 "$brew_log" >&2; exit 1; }
-      echo "  ✓ Homebrew packages installed"
-    fi
-    if [ -n "$brew_upgrade" ]; then
-      if command -v spin >/dev/null 2>&1; then
-        # shellcheck disable=SC2086
-        spin "Updating Homebrew packages · details in $brew_log" -- \
-          bash -c 'log=$1; shift; brew upgrade "$@" >>"$log" 2>&1' _ "$brew_log" $brew_upgrade
-      else
-        # shellcheck disable=SC2086
-        brew upgrade $brew_upgrade >>"$brew_log" 2>&1
-      fi || { tail -n 30 "$brew_log" >&2; exit 1; }
-      echo "  ✓ Homebrew packages updated"
-    fi
-    [ -n "$brew_missing$brew_upgrade" ] || echo "  ✓ Homebrew packages are current"
+  brew_log="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/install/homebrew.log"
+  # shellcheck disable=SC2086
+  brew_maintain_formulae "$brew_log" "Homebrew packages" $BREW_PKGS || exit $?
+  if [ "${DRY_RUN:-0}" != 1 ]; then
+    [ -n "$BREW_MISSING" ] && echo "  ✓ Homebrew packages installed"
+    [ -n "$BREW_UPGRADE" ] && echo "  ✓ Homebrew packages updated"
+    [ -n "$BREW_MISSING$BREW_UPGRADE" ] || echo "  ✓ Homebrew packages are current"
   fi
 
   # Optional Neovim toolchain (LSP servers and formatters). The nvim config
@@ -135,9 +103,7 @@ if [ "$OS_TYPE" = "Darwin" ]; then
       if [ "$picked" != none ] && [ -n "$picked" ]; then
         picked_pkgs="$(echo "$picked" | tr ',' ' ')"
         # shellcheck disable=SC2086
-        [ "${DRY_RUN:-0}" != 1 ] && tx_brew_install $picked_pkgs
-        # shellcheck disable=SC2086
-        run brew install $picked_pkgs
+        brew_install_formulae "$brew_log" "optional Neovim tools" $picked_pkgs
       fi
     fi
   fi

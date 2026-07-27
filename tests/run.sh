@@ -7,6 +7,7 @@ bash -n \
   "$ROOT/install.sh" \
   "$ROOT/uninstall.sh" \
   "$ROOT"/lib/*.sh \
+  "$ROOT"/lib/packages/*.sh \
   "$ROOT"/lib/setup/*.sh \
   "$ROOT"/steps/*.sh \
   "$ROOT"/scripts/*.sh \
