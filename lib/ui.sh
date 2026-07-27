@@ -28,6 +28,8 @@
 # -----------------------------------------------------------------------------
 # shellcheck source=lib/theme.sh
 . "$(dirname "${BASH_SOURCE[0]:-$0}")/theme.sh"
+# shellcheck source=lib/exec.sh
+. "$(dirname "${BASH_SOURCE[0]:-$0}")/exec.sh"
 
 LAYOUT_MARGIN=2         # left margin so nothing hugs the terminal edge
 LAYOUT_MAXWIDTH=90      # cap the UI width on very wide terminals
@@ -222,22 +224,6 @@ summary_table() {
       --columns "Component,Selection" --widths 22,40
   else column -t -s'|'; fi
   return 0
-}
-
-# -----------------------------------------------------------------------------
-#  DRY-RUN  — run a state-changing command, or just announce it when DRY_RUN=1.
-#  Steps wrap any mutating command (ln, cp, mkdir, brew install, defaults write)
-#  in `run`, so `install.sh --dry-run` prints every action without executing.
-#  Read-only commands (test, grep, command -v) should NOT be wrapped — they're
-#  safe and the steps need their real results even during a dry run.
-#  DRY_RUN is exported by install.sh; defaults to 0 (execute) when unset.
-# -----------------------------------------------------------------------------
-run() {
-  if [ "${DRY_RUN:-0}" = 1 ]; then
-    printf '%s%s[dry-run]%s %s\n' "$PAD" "$c_info" "$c_reset" "$*"
-    return 0
-  fi
-  "$@"
 }
 
 # -----------------------------------------------------------------------------

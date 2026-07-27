@@ -101,6 +101,8 @@ fi
 
 source "$DOTFILES_DIR/lib/detect.sh"
 source "$DOTFILES_DIR/lib/ui.sh"
+[ -f "$DOTFILES_DIR/lib/step.sh" ]        && source "$DOTFILES_DIR/lib/step.sh"
+[ -f "$DOTFILES_DIR/lib/state.sh" ]       && source "$DOTFILES_DIR/lib/state.sh"
 [ -f "$DOTFILES_DIR/lib/template.sh" ]    && source "$DOTFILES_DIR/lib/template.sh"
 [ -f "$DOTFILES_DIR/lib/plan.sh" ]        && source "$DOTFILES_DIR/lib/plan.sh"
 [ -f "$DOTFILES_DIR/lib/transaction.sh" ] && source "$DOTFILES_DIR/lib/transaction.sh"
@@ -231,9 +233,6 @@ if [ "$OS_TYPE" = "Linux" ] && [ "$(id -u)" -ne 0 ] && [ "$DRY_RUN" != 1 ]; then
   trap sudo_keepalive_stop EXIT
 fi
 
-# step_title 01-packages.sh -> "packages" : strip NN- prefix and .sh, spaces for dashes.
-step_title() { local s="${1#*-}"; s="${s%.sh}"; echo "${s//-/ }"; }
-
 # Read the profile on a dedicated FD (3), not stdin. Under `curl | bash` stdin is
 # the pipe carrying the rest of this script; a step that consumes stdin (e.g. brew
 # installing a cask) would otherwise drain it and bash would hit EOF after the
@@ -267,13 +266,16 @@ while IFS= read -r step <&3; do
   step "$STEP_N/$STEP_TOTAL" "$(step_title "$step")"
   # Fail-fast: a non-zero step aborts the whole install and triggers rollback.
   # Capture the step's real exit code directly (a `if ! cmd` would mask it as 1).
-  bash "$DOTFILES_DIR/steps/$step" </dev/null
+  step_execute "$DOTFILES_DIR/steps/$step"
   step_rc=$?
   [ "$step_rc" -ne 0 ] && abort_install "$step" "$step_rc"
 done 3< "$PROFILE_FILE"
 
 # All steps succeeded: commit the transaction (rotate the log, no rollback).
 [ "$TX_ENABLED" = 1 ] && tx_commit
+if [ "$DRY_RUN" != 1 ] && command -v state_set >/dev/null 2>&1; then
+  state_set public.base complete
+fi
 
 ok "Public setup done (profile: $PROFILE)."
 

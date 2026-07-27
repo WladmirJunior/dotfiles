@@ -24,8 +24,13 @@
 #
 # Disable rollback (e.g. debugging a half-finished state) with
 # DOTFILES_NO_ROLLBACK=1; the log is still written, just not replayed.
+# DOTFILES_INSTALLER_API identifies the public compatibility contract consumed
+# by private overlays. Increment it only for an incompatible API change.
 
 set -uo pipefail
+
+DOTFILES_INSTALLER_API=1
+export DOTFILES_INSTALLER_API
 
 TX_LOG="${TX_LOG:-$HOME/.dotfiles-install.jsonl}"
 TX_LAST="${TX_LAST:-$HOME/.dotfiles-install.last.jsonl}"
@@ -51,6 +56,23 @@ _tx_record() {
     # inside export -f'd functions corrupt in child shells).
     OP="$op" python3 -c 'import json,os,sys
 print(json.dumps({"op":os.environ["OP"],"undo":sys.argv[1:]},ensure_ascii=False))' "$@" >> "$TX_LOG"
+  fi
+}
+
+# _tx_record_backup OP BACKUP UNDO_ARGV...: record an undo that consumes a
+# temporary backup on rollback and removes that backup only after commit.
+_tx_record_backup() {
+  local op="$1" backup="$2"; shift 2
+  if _tx_have_jq; then
+    local args_json cleanup_json
+    args_json=$(printf '%s\n' "$@" | jq -R . | jq -cs .)
+    cleanup_json=$(printf '%s\n' rm -f "$backup" | jq -R . | jq -cs .)
+    printf '{"op":%s,"undo":%s,"cleanup":%s}\n' \
+      "$(printf '%s' "$op" | jq -R .)" "$args_json" "$cleanup_json" >> "$TX_LOG"
+  else
+    OP="$op" BACKUP="$backup" python3 -c 'import json,os,sys
+print(json.dumps({"op":os.environ["OP"],"undo":sys.argv[1:],"cleanup":["rm","-f",os.environ["BACKUP"]]},ensure_ascii=False))' \
+      "$@" >> "$TX_LOG"
   fi
 }
 
@@ -118,6 +140,14 @@ tx_run() {
   "$@"
 }
 
+# tx_backup_path OP PATH BACKUP: move PATH aside while retaining enough state
+# for rollback. The backup is deleted by tx_commit after the full install passes.
+tx_backup_path() {
+  local op="$1" path="$2" backup="$3"
+  _tx_record_backup "$op" "$backup" mv "$backup" "$path"
+  mv "$path" "$backup"
+}
+
 # ── Rollback ──────────────────────────────────────────────────────────────────
 
 # _tx_exec_undo LINE: parse one JSONL line and run its .undo argv. Best-effort.
@@ -154,6 +184,28 @@ if u:
   fi
 }
 
+_tx_exec_cleanup() {
+  local line="$1"
+  [ -z "$line" ] && return 0
+  if _tx_have_jq; then
+    local argv=() b64
+    while IFS= read -r b64; do
+      [ -z "$b64" ] && continue
+      argv+=("$(printf '%s' "$b64" | base64 -d 2>/dev/null)")
+    done < <(printf '%s' "$line" | jq -r '.cleanup[]? | @base64' 2>/dev/null)
+    [ "${#argv[@]}" -eq 0 ] || "${argv[@]}" >/dev/null 2>&1 \
+      || echo "tx: commit cleanup failed: ${argv[*]}" >&2
+  else
+    LINE="$line" python3 -c 'import json,os,subprocess
+try:
+    cleanup=json.loads(os.environ["LINE"]).get("cleanup") or []
+except Exception:
+    cleanup=[]
+if cleanup:
+    subprocess.run(cleanup,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)' || true
+  fi
+}
+
 # tx_rollback: replay every recorded undo in reverse order. Best-effort — a
 # failing undo is logged and skipped so one bad entry doesn't strand the rest.
 tx_rollback() {
@@ -174,9 +226,13 @@ tx_rollback() {
 
 # tx_commit: call on full success. Rotate the live log to .last and clear it.
 tx_commit() {
+  if [ -s "$TX_LOG" ]; then
+    local line
+    while IFS= read -r line; do _tx_exec_cleanup "$line"; done < "$TX_LOG"
+  fi
   [ -f "$TX_LOG" ] && mv "$TX_LOG" "$TX_LAST" 2>/dev/null || true
 }
 
-export -f tx_init _tx_have_jq _tx_record tx_brew_install tx_brew_cask \
+export -f tx_init _tx_have_jq _tx_record _tx_record_backup tx_brew_install tx_brew_cask \
   tx_apt_install tx_pacman_install tx_dnf_install tx_brew_self tx_git_clone tx_mkdir tx_symlink tx_run \
-  _tx_exec_undo tx_rollback tx_commit 2>/dev/null || true
+  tx_backup_path _tx_exec_undo _tx_exec_cleanup tx_rollback tx_commit 2>/dev/null || true
