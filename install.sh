@@ -324,10 +324,13 @@ github_ssh_ready() {
 }
 
 apply_private_overlay() {
-  local private_dir="$HOME/.***REMOVED***" private_repo
+  # The overlay repo, and therefore its local dir name, comes from the
+  # 1Password bootstrap note; no overlay name is hardcoded in this file.
+  local private_repo private_dir
   private_repo="$(op item get dotfiles-bootstrap --vault Personal \
     --fields private_repo 2>/dev/null)" || return 1
   [ -n "$private_repo" ] || return 1
+  private_dir="$HOME/.$(basename "${private_repo%.git}")"
   if [ -d "$private_dir/.git" ]; then
     git -C "$private_dir" pull --ff-only || return 1
   else
@@ -460,7 +463,7 @@ if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
       note "fetching and applying private overlay..."
       if ! apply_private_overlay; then
         note "private overlay did not complete"
-        info "Re-run: ~/.***REMOVED***/install.sh"
+        info "Re-run this installer and choose to apply private overlays."
       fi
     else
       note "Private overlays skipped until GitHub SSH authentication works."
@@ -548,7 +551,7 @@ elif [ "$OS_TYPE" = "Linux" ] \
       note "fetching and applying private overlay..."
       if ! apply_private_overlay; then
         note "private overlay did not complete"
-        info "Re-run: ~/.***REMOVED***/install.sh"
+        info "Re-run this installer and choose to apply private overlays."
       fi
     else
       note "Private overlays skipped until GitHub SSH authentication works."
