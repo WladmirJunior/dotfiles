@@ -25,7 +25,7 @@ dnf_core="$(package_catalog core dnf | sorted_packages)"
   echo "unexpected APT catalog order: $apt_core" >&2
   exit 1
 }
-[ "$pacman_core" = '7zip bat curl eza fastfetch fd fzf git git-delta github-cli glow gum hexyl jq neovim nodejs npm perl-image-exiftool pkgfile resvg ripgrep tealdeer wget yazi zoxide zsh' ] || {
+[ "$pacman_core" = '7zip bat curl eza fastfetch fd fzf git git-delta github-cli glow gum hexyl jq lua-language-server neovim nodejs npm perl-image-exiftool pkgfile resvg ripgrep tealdeer tree-sitter-cli usbutils vhs wget wishlist yazi zoxide zsh' ] || {
   echo "unexpected Pacman catalog order: $pacman_core" >&2
   exit 1
 }
