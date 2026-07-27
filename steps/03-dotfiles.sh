@@ -114,10 +114,9 @@ else
   # Undo: drop the include.path entry we add (best-effort; --unset on the exact value).
   tx_run "git_include_path" git config --global --unset include.path "$DELTA" -- git config --global include.path "$DELTA"
 fi
-# Git identity is provisioned by the private overlay (***REMOVED*** step 01:
-# work machines auto-set, personal machines prompted with a default). Prompting
-# here too would double-ask, and a blank answer used to write an empty ident
-# that hard-fails commits.
+# Git identity is intentionally not set here. The old prompt wrote an empty
+# ident on a blank answer, which hard-fails commits; set user.name/user.email
+# yourself if nothing else in your setup does.
 
 # Dev dirs. ~/dev is the real working dir (consistent on macOS and Linux). On
 # macOS, ~/Developer is a symlink to ~/dev so the folder shows with the standard
