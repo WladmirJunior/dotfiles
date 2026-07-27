@@ -4,10 +4,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/bin" "$TMP/state" "$TMP/home" "$TMP/dotfiles/lib/packages"
+mkdir -p "$TMP/bin" "$TMP/state" "$TMP/home" "$TMP/dotfiles/lib/packages" "$TMP/dotfiles/config"
 ln -s "$ROOT/lib/transaction.sh" "$TMP/dotfiles/lib/transaction.sh"
 ln -s "$ROOT/lib/exec.sh" "$TMP/dotfiles/lib/exec.sh"
 ln -s "$ROOT/lib/packages/brew.sh" "$TMP/dotfiles/lib/packages/brew.sh"
+ln -s "$ROOT/lib/packages/catalog.sh" "$TMP/dotfiles/lib/packages/catalog.sh"
+ln -s "$ROOT/config/packages.tsv" "$TMP/dotfiles/config/packages.tsv"
 
 cat > "$TMP/bin/brew" <<'SH'
 #!/bin/sh

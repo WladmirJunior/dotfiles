@@ -21,7 +21,7 @@ jobs:
           shellcheck -x
           -e SC1090,SC1091,SC2034
           lib/exec.sh lib/state.sh lib/step.sh lib/transaction.sh
-          lib/setup/selection.sh lib/packages/brew.sh
+          lib/setup/selection.sh lib/packages/*.sh
           scripts/install-github-release.sh
       - name: Run installer tests
         run: bash tests/run.sh

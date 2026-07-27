@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install essential CLI tools (brew on macOS, apt or pacman on Linux).
+# Install essential CLI tools (Homebrew on macOS; APT, Pacman or DNF on Linux).
 # Requires: DOTFILES_DIR in env.
 set -uo pipefail
 [ -z "${OS_TYPE:-}" ] && source "${DOTFILES_DIR:-.}/lib/detect.sh"
@@ -9,15 +9,15 @@ source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
 # failure. When the lib isn't sourced (step run standalone), the tx_* calls
 # below are stubbed to no-ops so the step still works on its own.
 [ -f "${DOTFILES_DIR:-.}/lib/transaction.sh" ] && source "${DOTFILES_DIR:-.}/lib/transaction.sh" 2>/dev/null || true
+[ -f "${DOTFILES_DIR:-.}/lib/packages/catalog.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/catalog.sh" 2>/dev/null || true
 [ -f "${DOTFILES_DIR:-.}/lib/packages/brew.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/brew.sh" 2>/dev/null || true
+[ -f "${DOTFILES_DIR:-.}/lib/packages/apt.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/apt.sh" 2>/dev/null || true
+[ -f "${DOTFILES_DIR:-.}/lib/packages/pacman.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/pacman.sh" 2>/dev/null || true
+[ -f "${DOTFILES_DIR:-.}/lib/packages/dnf.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/dnf.sh" 2>/dev/null || true
 for fn in tx_brew_install tx_brew_cask tx_apt_install tx_pacman_install tx_dnf_install tx_brew_self; do
   command -v "$fn" >/dev/null 2>&1 || eval "$fn() { :; }"
 done
 command -v run >/dev/null 2>&1 || run() { [ "${DRY_RUN:-0}" = 1 ] && { echo "[dry-run] $*"; return 0; }; "$@"; }
-
-apt_package_installed() {
-  dpkg-query -W -f='${db:Status-Abbrev}' "$1" 2>/dev/null | grep -q '^ii'
-}
 
 echo "[01] CLI packages..."
 
@@ -66,7 +66,7 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   # Claude Code harness pushes scripts toward after it blocked foreground `sleep`.
   # 03-dotfiles symlinks gtimeout -> ~/.local/bin/timeout so the bare name works.
   # freeze lives in the charmbracelet tap (the core "freeze" name is an unrelated cask).
-  BREW_PKGS="git gh neovim fzf zoxide eza bat ripgrep fd git-delta tlrc node usbutils coreutils yazi hexyl fastfetch sevenzip resvg exiftool glow vhs charmbracelet/tap/freeze charmbracelet/tap/wishlist tree-sitter-cli lua-language-server"
+  BREW_PKGS="$(package_catalog core brew)"
   # tlrc and tldr both ship a `tldr` binary; a legacy `tldr` install (older setups)
   # makes `brew install tlrc` abort with a conflict. Drop it first so tlrc wins.
   if [ "${DRY_RUN:-0}" != 1 ] && brew list --formula 2>/dev/null | grep -qx tldr; then
@@ -88,7 +88,7 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   # enables each one only when its binary exists, so skipping any is safe.
   # Interactive multi-select; already-installed ones are filtered out. With no
   # TTY (CI, tart exec) `pick` degrades to 'none' and the step moves on.
-  NVIM_OPT_PKGS="bash-language-server clojure-lsp/brew/clojure-lsp-native gopls shfmt jq"
+  NVIM_OPT_PKGS="$(package_catalog nvim-optional brew)"
   if [ "${DRY_RUN:-0}" != 1 ] && command -v pick >/dev/null 2>&1; then
     nvim_opt_missing=""
     for pkg in $NVIM_OPT_PKGS; do
@@ -117,38 +117,25 @@ elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "apt" ]; then
   # Install in two passes so a missing package in one distro (e.g. trixie removed
   # `software-properties-common` from the default repo) doesn't drop the rest.
   # First pass: core tools that must be there. Second pass: nice-to-haves, best-effort.
-  APT_CORE="zsh neovim fzf zoxide bat ripgrep fd-find git-delta nodejs npm curl git gh wget hexyl"
-  if [ "${DRY_RUN:-0}" != 1 ]; then
-    APT_NEW=""
-    for pkg in $APT_CORE; do
-      apt_package_installed "$pkg" || APT_NEW="$APT_NEW $pkg"
-    done
-    # Rollback only packages introduced by this run, never pre-existing tools.
-    [ -n "$APT_NEW" ] && tx_apt_install $APT_NEW
-  fi
-  run $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y $APT_CORE
+  APT_CORE="$(package_catalog core apt)"
+  # shellcheck disable=SC2086
+  apt_install_required $APT_CORE
   # Yazi is not packaged by every supported Debian/Ubuntu release. Install the
   # official architecture-specific .deb and verify GitHub's published digest.
   if ! command -v yazi >/dev/null 2>&1; then
-    [ "${DRY_RUN:-0}" != 1 ] && tx_apt_install yazi
+    [ "${DRY_RUN:-0}" = 1 ] || apt_package_installed yazi || tx_apt_install yazi
     run bash "${DOTFILES_DIR:?}/scripts/install-yazi.sh"
   fi
   # Fastfetch package availability also varies by distribution. Use its
   # verified official .deb when it is not already present.
   if ! command -v fastfetch >/dev/null 2>&1; then
-    [ "${DRY_RUN:-0}" != 1 ] && tx_apt_install fastfetch
+    [ "${DRY_RUN:-0}" = 1 ] || apt_package_installed fastfetch || tx_apt_install fastfetch
     run bash "${DOTFILES_DIR:?}/scripts/install-fastfetch.sh"
   fi
   # Best-effort extras; never abort if one is missing in this distro.
-  for pkg in eza tealdeer 7zip resvg libimage-exiftool-perl software-properties-common glow; do
-    apt_was_installed=0
-    apt_package_installed "$pkg" && apt_was_installed=1
-    if run $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" 2>/dev/null; then
-      [ "${DRY_RUN:-0}" = 1 ] || [ "$apt_was_installed" = 1 ] || tx_apt_install "$pkg"
-    else
-      echo "  skip: $pkg not available in this distro"
-    fi
-  done
+  APT_OPTIONAL="$(package_catalog best-effort apt)"
+  # shellcheck disable=SC2086
+  apt_install_optional $APT_OPTIONAL
   run mkdir -p ~/.local/bin
   [ -n "$(command -v fdfind 2>/dev/null)" ] && run ln -sf "$(command -v fdfind)" ~/.local/bin/fd
   [ -n "$(command -v batcat 2>/dev/null)" ] && run ln -sf "$(command -v batcat)" ~/.local/bin/bat
@@ -165,22 +152,9 @@ elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "pacman" ]; then
 
   # Arch forbids partial upgrades: -Syu refreshes databases and upgrades the
   # system before resolving this package set. --needed keeps re-runs idempotent.
-  # Parity with BREW_PKGS above, minus what Arch already ships in base: GNU
-  # coreutils is a base dependency here (macOS needs brew for `timeout`), so it
-  # is deliberately absent. wishlist/vhs/tree-sitter-cli/lua-language-server/
-  # usbutils were macOS-only for a while purely because this list was never
-  # updated alongside BREW_PKGS. `freeze` has no official Arch package (AUR
-  # only) and stays out.
-  PACMAN_CORE="zsh neovim fzf zoxide bat ripgrep fd git-delta nodejs npm curl git github-cli wget hexyl yazi fastfetch eza tealdeer 7zip resvg perl-image-exiftool glow pkgfile jq gum wishlist vhs tree-sitter-cli lua-language-server usbutils"
-  if [ "${DRY_RUN:-0}" != 1 ]; then
-    PACMAN_NEW=""
-    for pkg in $PACMAN_CORE; do
-      pacman -Q "$pkg" >/dev/null 2>&1 || PACMAN_NEW="$PACMAN_NEW $pkg"
-    done
-    # Rollback only packages introduced by this run, never pre-existing tools.
-    [ -n "$PACMAN_NEW" ] && tx_pacman_install $PACMAN_NEW
-  fi
-  run $SUDO pacman -Syu --needed --noconfirm $PACMAN_CORE
+  PACMAN_CORE="$(package_catalog core pacman)"
+  # shellcheck disable=SC2086
+  pacman_install_required $PACMAN_CORE
 
   # Prefer the custom border-row fork over the stock package.
   [ "${DRY_RUN:-0}" = 1 ] || ui_ensure_gum
@@ -200,22 +174,15 @@ elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "pacman" ]; then
 elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "dnf" ]; then
   SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO=sudo
   TX_SUDO="$SUDO"
-  DNF_CORE="zsh neovim fzf zoxide bat ripgrep fd-find nodejs npm curl git gh wget jq"
-  DNF_NEW=""
-  for pkg in $DNF_CORE; do rpm -q "$pkg" >/dev/null 2>&1 || DNF_NEW="$DNF_NEW $pkg"; done
-  [ "${DRY_RUN:-0}" = 1 ] || [ -z "$DNF_NEW" ] || tx_dnf_install $DNF_NEW
-  run $SUDO dnf install -y -q $DNF_CORE
+  DNF_CORE="$(package_catalog core dnf)"
+  # shellcheck disable=SC2086
+  dnf_install_required $DNF_CORE
 
   # Tool availability varies between Fedora releases and RHEL-compatible
   # derivatives. Keep the base reliable and add parity tools independently.
-  for pkg in git-delta hexyl yazi fastfetch eza tealdeer p7zip p7zip-plugins resvg perl-Image-ExifTool glow PackageKit-command-not-found; do
-    if rpm -q "$pkg" >/dev/null 2>&1; then continue; fi
-    if run $SUDO dnf install -y -q "$pkg" 2>/dev/null; then
-      [ "${DRY_RUN:-0}" = 1 ] || tx_dnf_install "$pkg"
-    else
-      echo "  skip: $pkg not available in this Fedora-family release"
-    fi
-  done
+  DNF_OPTIONAL="$(package_catalog best-effort dnf)"
+  # shellcheck disable=SC2086
+  dnf_install_optional $DNF_OPTIONAL
   [ "${DRY_RUN:-0}" = 1 ] || ui_ensure_gum
 else
   echo "Unsupported OS/distribution: $OS_TYPE (${DISTRO_ID:-unknown}); supported Linux families: Arch, Debian and Fedora." >&2
