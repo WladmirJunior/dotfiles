@@ -30,10 +30,13 @@ lnk() {
 echo "[03] Applying dotfiles..."
 
 # ~/.zshrc is a thin real file (not a symlink) so machine-local overlays can
-# append to ~/.zshrc.local without writing into the versioned repo file.
-if [ ! -f "$HOME/.zshrc" ] || [ -L "$HOME/.zshrc" ] || ! grep -q '.dotfiles/config/zsh/zshrc' "$HOME/.zshrc"; then
+# append to ~/.zshrc.local without writing into the versioned repo file. Use
+# the resolved repository path. Normal installs canonicalize the clone at
+# ~/.dotfiles before this step; keeping D here also makes preview/check robust.
+ZSH_CONFIG="$D/config/zsh/zshrc"
+if [ ! -f "$HOME/.zshrc" ] || [ -L "$HOME/.zshrc" ] || ! grep -qF "$ZSH_CONFIG" "$HOME/.zshrc"; then
   if [ "${DRY_RUN:-0}" = 1 ]; then
-    echo "[dry-run] write thin ~/.zshrc (sources ~/.dotfiles/config/zsh/zshrc)"
+    echo "[dry-run] write thin ~/.zshrc (sources $ZSH_CONFIG)"
   else
     # Record an undo BEFORE overwriting: back up any existing ~/.zshrc and restore
     # it on rollback; if there was none, the undo just removes the file we write.
@@ -53,10 +56,9 @@ if [ ! -f "$HOME/.zshrc" ] || [ -L "$HOME/.zshrc" ] || ! grep -q '.dotfiles/conf
     else
       tx_run "write:.zshrc" rm -f "$HOME/.zshrc" -- true
     fi
-    cat > "$HOME/.zshrc" <<EOF
-# Managed by dotfiles. Public config lives in the repo; local overlays in ~/.zshrc.local.
-[ -f "\$HOME/.dotfiles/config/zsh/zshrc" ] && source "\$HOME/.dotfiles/config/zsh/zshrc"
-EOF
+    printf '%s\n' \
+      '# Managed by dotfiles. Public config lives in the repo; local overlays in ~/.zshrc.local.' \
+      "[ -f \"$ZSH_CONFIG\" ] && source \"$ZSH_CONFIG\"" > "$HOME/.zshrc"
   fi
 fi
 lnk "$D/config/nvim/init.lua"   "$HOME/.config/nvim/init.lua"

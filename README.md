@@ -1,6 +1,7 @@
 # dotfiles
 
-Dev environment setup for macOS and Linux (Debian/Kali).
+Dev environment setup for macOS and Linux (Arch and Debian families, including
+EndeavourOS/CachyOS, Ubuntu and Kali).
 
 The installer detects the host (physical Mac, Mac VM, or Linux/VM) and skips GUI apps that only make sense on a physical machine.
 
@@ -12,14 +13,17 @@ The installer detects the host (physical Mac, Mac VM, or Linux/VM) and skips GUI
 - [fast-syntax-highlighting](https://github.com/zdharma-continuum/fast-syntax-highlighting)
 - [fzf-tab](https://github.com/Aloxaf/fzf-tab)
 - [zsh-you-should-use](https://github.com/MichaelAquilina/zsh-you-should-use)
-- command-not-found (Homebrew on macOS, apt on Linux)
+- command-not-found (Homebrew on macOS, apt on Debian, pkgfile on Arch)
 
 **Mac apps installed by default (physical Mac only):**
 - Font: JetBrains Mono
 - Touch ID for sudo (pam_tid)
 
 1Password (+ the `op` CLI) is installed only if you opt into the authentication
-step at the end of the install.
+step at the end of a desktop install. On Arch, the signed app and CLI packages
+are built from the AUR; on macOS they are installed with Homebrew. The Arch AUR
+clones are kept under `~/.cache/dotfiles/aur`; re-running
+`scripts/install-1password-arch.sh` pulls them and applies available updates.
 
 **Configs:**
 - `config/zsh/zshrc`: ZSH with aliases, prompt, history, modern unix tool replacements
@@ -38,6 +42,10 @@ Or locally:
 git clone https://github.com/WladmirJunior/dotfiles.git ~/.dotfiles
 ~/.dotfiles/install.sh
 ```
+
+If the repository was initially cloned elsewhere, running `install.sh` normally
+moves the whole clone to the canonical `~/.dotfiles` path before installation.
+`--dry-run`, `--plan`, and `--check` never move it.
 
 ### Profiles
 
@@ -87,8 +95,9 @@ ${OP:op://Personal/...}   read secret from 1Password
 # @include path/file.tmpl include another template
 ```
 
-Standard vars: `OS_TYPE`, `ARCH`, `IS_VM`, `HEADLESS`, `IS_WORK_MAC`,
-`HOST_SHORT`, `GIT_NAME`, `GIT_EMAIL`. Set in `lib/detect.sh` /
+Standard vars: `OS_TYPE`, `ARCH`, `IS_VM`, `IS_CONTAINER`, `HEADLESS`, `IS_WORK_MAC`,
+`DISTRO_ID`, `DISTRO_FAMILY`, `PACKAGE_MANAGER`, `HOST_SHORT`, `GIT_NAME`,
+`GIT_EMAIL`. Set in `lib/detect.sh` /
 `lib/template.sh::detect_template`.
 
 ### Provision a fresh VM
@@ -107,12 +116,12 @@ For Linux VMs, `config/cloud-init/` has first-boot seeds (`user-data.arch`,
 ### Architecture
 
 - `install.sh`: orchestrator. Detects environment, reads profile, runs steps.
-- `lib/detect.sh`: OS, arch, VM, headless, TTY detection.
+- `lib/detect.sh`: OS, Linux family/package manager, arch, VM/container, headless and TTY detection.
 - `steps/`: `01-packages` (CLI), `02-shell` (fzf+plugins), `03-dotfiles` (configs), `04-apps` (GUI, desktop only).
 - `profiles/`: step list per machine type.
 - `scripts/provision-vm.sh`: clone + provision a tart VM hands-off (macOS, via `tart exec`).
-- `scripts/install-yazi.sh`: installs the verified official Yazi `.deb` when the Linux distribution does not package it.
-- `scripts/install-fastfetch.sh`: installs the verified official Fastfetch `.deb` when the Linux distribution does not package it.
+- `scripts/install-yazi.sh`: installs the verified official Yazi `.deb` when a Debian-family distribution does not package it.
+- `scripts/install-fastfetch.sh`: installs the verified official Fastfetch `.deb` when a Debian-family distribution does not package it.
 - `config/cloud-init/`: first-boot seeds for Linux VMs (Arch, Kali).
 
 The installer detects VM (skips GUI apps), headless (skips GUI on Linux), and TTY: interactive mode prompts for opt-in apps; via `curl|bash` (no TTY) uses defaults.

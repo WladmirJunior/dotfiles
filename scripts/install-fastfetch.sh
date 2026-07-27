@@ -9,9 +9,13 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 SHASUM_BIN="${SHASUM_BIN:-sha256sum}"
 APT_GET_BIN="${APT_GET_BIN:-apt-get}"
 UNAME_BIN="${UNAME_BIN:-uname}"
+FASTFETCH_BIN="${FASTFETCH_BIN:-fastfetch}"
 
 [ "$($UNAME_BIN -s)" = "Linux" ] || { echo "  Fastfetch: Linux installer skipped"; exit 0; }
-command -v fastfetch >/dev/null 2>&1 && { echo "  Fastfetch: already installed"; exit 0; }
+if [ -x "$FASTFETCH_BIN" ] || command -v "$FASTFETCH_BIN" >/dev/null 2>&1; then
+  echo "  Fastfetch: already installed"
+  exit 0
+fi
 
 if [ "${DRY_RUN:-0}" = 1 ]; then
   echo "[dry-run] install latest verified Fastfetch release from $RELEASE_API"

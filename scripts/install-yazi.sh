@@ -9,9 +9,13 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 SHASUM_BIN="${SHASUM_BIN:-sha256sum}"
 APT_GET_BIN="${APT_GET_BIN:-apt-get}"
 UNAME_BIN="${UNAME_BIN:-uname}"
+YAZI_BIN="${YAZI_BIN:-yazi}"
 
 [ "$($UNAME_BIN -s)" = "Linux" ] || { echo "  Yazi: Linux installer skipped"; exit 0; }
-command -v yazi >/dev/null 2>&1 && { echo "  Yazi: already installed"; exit 0; }
+if [ -x "$YAZI_BIN" ] || command -v "$YAZI_BIN" >/dev/null 2>&1; then
+  echo "  Yazi: already installed"
+  exit 0
+fi
 
 if [ "${DRY_RUN:-0}" = 1 ]; then
   echo "[dry-run] install latest verified Yazi release from $RELEASE_API"

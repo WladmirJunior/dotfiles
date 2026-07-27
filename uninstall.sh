@@ -56,7 +56,7 @@ task "configs & symlinks"
 
 # ~/.zshrc: only remove the thin file this repo writes (marker check), never a
 # user-authored zshrc.
-if [ -f "$HOME/.zshrc" ] && grep -q '.dotfiles/config/zsh/zshrc' "$HOME/.zshrc" 2>/dev/null; then
+if [ -f "$HOME/.zshrc" ] && grep -qF '# Managed by dotfiles.' "$HOME/.zshrc" 2>/dev/null; then
   backup_rm "$HOME/.zshrc"
 elif [ -e "$HOME/.zshrc" ]; then
   note "kept: ~/.zshrc (not the dotfiles thin file)"
@@ -115,13 +115,19 @@ elif [ "$OS_TYPE" = "Darwin" ]; then
     run brew uninstall --cask font-jetbrains-mono && note "uninstalled: font-jetbrains-mono"
   fi
   run brew autoremove 2>/dev/null || true
-elif [ "$OS_TYPE" = "Linux" ]; then
+elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "apt" ]; then
   task "apt packages"
   SUDO=""; [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO=sudo
   APT_PKGS="neovim fzf zoxide bat ripgrep fd-find git-delta eza tealdeer yazi hexyl fastfetch 7zip resvg libimage-exiftool-perl"
   # zsh/git/curl/nodejs stay: likely predate the dotfiles or are system deps.
   run $SUDO apt-get remove -y $APT_PKGS 2>/dev/null || note "some apt packages kept"
   run $SUDO apt-get autoremove -y 2>/dev/null || true
+elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "pacman" ]; then
+  task "pacman packages"
+  SUDO=""; [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO=sudo
+  PACMAN_PKGS="neovim fzf zoxide bat ripgrep fd git-delta eza tealdeer yazi hexyl fastfetch 7zip resvg perl-image-exiftool glow pkgfile jq gum"
+  # zsh/git/curl/nodejs stay: likely predate the dotfiles or are system deps.
+  run $SUDO pacman -Rns --noconfirm $PACMAN_PKGS 2>/dev/null || note "some pacman packages kept"
 fi
 
 # -- 04-apps: Touch ID for sudo (needs sudo, best-effort) -----------------------

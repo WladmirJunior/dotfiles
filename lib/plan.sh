@@ -53,7 +53,7 @@ plan_file_change() {
 }
 
 # plan_pkg_install TYPE PKG [PKG...]
-# TYPE: brew | cask | apt | npm | pip
+# TYPE: brew | cask | apt | pacman | npm | pip
 plan_pkg_install() {
   local type="$1"; shift
   local pkg
@@ -68,6 +68,9 @@ plan_pkg_install() {
         ;;
       apt)
         dpkg -s "$pkg" >/dev/null 2>&1 && installed=1
+        ;;
+      pacman)
+        command -v pacman >/dev/null 2>&1 && pacman -Q "$pkg" >/dev/null 2>&1 && installed=1
         ;;
       npm)
         command -v npm >/dev/null 2>&1 && npm list -g --depth=0 "$pkg" >/dev/null 2>&1 && installed=1
@@ -85,6 +88,7 @@ plan_pkg_install() {
           brew) brew install "$pkg" ;;
           cask) brew install --cask "$pkg" ;;
           apt)  sudo apt-get install -y "$pkg" ;;
+          pacman) sudo pacman -S --needed --noconfirm "$pkg" ;;
           npm)  npm install -g "$pkg" ;;
           pip)  pip3 install --user "$pkg" ;;
         esac

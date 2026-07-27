@@ -7,7 +7,7 @@ trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin"
 
 printf 'fastfetch test package' > "$TMP/reference.deb"
-TEST_SHA="$(/usr/bin/shasum -a 256 "$TMP/reference.deb" | awk '{print $1}')"
+TEST_SHA="$(sha256sum "$TMP/reference.deb" | awk '{print $1}')"
 export TEST_SHA
 
 cat > "$TMP/bin/uname" <<'SH'
@@ -35,7 +35,7 @@ SH
 
 cat > "$TMP/bin/sha256sum" <<'SH'
 #!/bin/sh
-/usr/bin/shasum -a 256 "$1"
+/usr/bin/sha256sum "$1"
 SH
 
 cat > "$TMP/bin/apt-get" <<'SH'
@@ -52,6 +52,7 @@ CURL_BIN="$TMP/bin/curl" \
 SHASUM_BIN="$TMP/bin/sha256sum" \
 APT_GET_BIN="$TMP/bin/apt-get" \
 UNAME_BIN="$TMP/bin/uname" \
+FASTFETCH_BIN="$TMP/bin/fastfetch-test-not-installed" \
 SUDO_BIN="" \
   "$ROOT/scripts/install-fastfetch.sh"
 
@@ -69,6 +70,7 @@ PATH="$TMP/bin:/usr/bin:/bin" \
 CURL_LOG="$TMP/curl.log" \
 CURL_BIN="$TMP/bin/curl" \
 UNAME_BIN="$TMP/bin/uname" \
+FASTFETCH_BIN="$TMP/bin/fastfetch" \
   "$ROOT/scripts/install-fastfetch.sh"
 [ "$(wc -l < "$TMP/curl.log" | tr -d ' ')" = "$curl_calls" ]
 

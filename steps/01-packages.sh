@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install essential CLI tools (brew on Mac, apt on Linux).
+# Install essential CLI tools (brew on macOS, apt or pacman on Linux).
 # Requires: DOTFILES_DIR in env.
 set -uo pipefail
 [ -z "${OS_TYPE:-}" ] && source "${DOTFILES_DIR:-.}/lib/detect.sh"
@@ -8,7 +8,7 @@ source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
 # failure. When the lib isn't sourced (step run standalone), the tx_* calls
 # below are stubbed to no-ops so the step still works on its own.
 [ -f "${DOTFILES_DIR:-.}/lib/transaction.sh" ] && source "${DOTFILES_DIR:-.}/lib/transaction.sh" 2>/dev/null || true
-for fn in tx_brew_install tx_brew_cask tx_apt_install tx_brew_self; do
+for fn in tx_brew_install tx_brew_cask tx_apt_install tx_pacman_install tx_brew_self; do
   command -v "$fn" >/dev/null 2>&1 || eval "$fn() { :; }"
 done
 command -v run >/dev/null 2>&1 || run() { [ "${DRY_RUN:-0}" = 1 ] && { echo "[dry-run] $*"; return 0; }; "$@"; }
@@ -96,7 +96,7 @@ if [ "$OS_TYPE" = "Darwin" ]; then
       fi
     fi
   fi
-elif [ "$OS_TYPE" = "Linux" ]; then
+elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "apt" ]; then
   # On a clean apt-based image we may run as root (no sudo). Pick the right prefix.
   SUDO=""
   [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO=sudo
@@ -132,7 +132,47 @@ elif [ "$OS_TYPE" = "Linux" ]; then
   run mkdir -p ~/.local/bin
   [ -n "$(command -v fdfind 2>/dev/null)" ] && run ln -sf "$(command -v fdfind)" ~/.local/bin/fd
   [ -n "$(command -v batcat 2>/dev/null)" ] && run ln -sf "$(command -v batcat)" ~/.local/bin/bat
+elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "pacman" ]; then
+  SUDO=""
+  if [ "$(id -u)" -ne 0 ]; then
+    command -v sudo >/dev/null 2>&1 || {
+      echo "[01] ERROR: sudo is required when installing as a non-root user." >&2
+      exit 1
+    }
+    SUDO=sudo
+  fi
+  TX_SUDO="$SUDO"
+
+  # Arch forbids partial upgrades: -Syu refreshes databases and upgrades the
+  # system before resolving this package set. --needed keeps re-runs idempotent.
+  PACMAN_CORE="zsh neovim fzf zoxide bat ripgrep fd git-delta nodejs npm curl git github-cli wget hexyl yazi fastfetch eza tealdeer 7zip resvg perl-image-exiftool glow pkgfile jq gum"
+  if [ "${DRY_RUN:-0}" != 1 ]; then
+    PACMAN_NEW=""
+    for pkg in $PACMAN_CORE; do
+      pacman -Q "$pkg" >/dev/null 2>&1 || PACMAN_NEW="$PACMAN_NEW $pkg"
+    done
+    # Rollback only packages introduced by this run, never pre-existing tools.
+    [ -n "$PACMAN_NEW" ] && tx_pacman_install $PACMAN_NEW
+  fi
+  run $SUDO pacman -Syu --needed --noconfirm $PACMAN_CORE
+
+  # Prefer the custom border-row fork over the stock package.
+  [ "${DRY_RUN:-0}" = 1 ] || ui_ensure_gum
+
+  # Populate pkgfile's command database for the zsh command-not-found hook.
+  # Some third-party repositories (for example arch-mact2) do not publish a
+  # usable .files index. pkgfile then exits non-zero even though the official
+  # core/extra databases were updated successfully, so validate the resulting
+  # database instead of treating that aggregate exit status as authoritative.
+  if ! run $SUDO pkgfile --update; then
+    if [ "${DRY_RUN:-0}" != 1 ] && pkgfile --binaries zsh >/dev/null 2>&1; then
+      echo "  pkgfile: official database ready (an optional repository has no file index)"
+    else
+      echo "  warning: pkgfile database is unavailable; run 'sudo pkgfile --update' later"
+    fi
+  fi
 else
-  echo "Unsupported OS: $OS_TYPE"; exit 1
+  echo "Unsupported OS/distribution: $OS_TYPE (${DISTRO_ID:-unknown}); supported Linux families: Arch and Debian." >&2
+  exit 1
 fi
 echo "[01] done"

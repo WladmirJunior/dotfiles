@@ -15,6 +15,7 @@
 #   tx_brew_install <formula...>       # undo: brew uninstall <formula>
 #   tx_brew_cask <cask...>             # undo: brew uninstall --cask <cask>
 #   tx_apt_install <pkg...>            # undo: apt-get remove -y <pkg>
+#   tx_pacman_install <pkg...>         # undo: pacman -Rns --noconfirm <pkg>
 #   tx_git_clone <url> <dest>          # undo: rm -rf <dest>
 #   tx_mkdir <dir>                     # undo: rmdir <dir>  (only if WE create it)
 #   tx_symlink <src> <dst>             # undo: restore prior target / remove
@@ -65,6 +66,12 @@ tx_brew_cask() {
 tx_apt_install() {
   local p
   for p in "$@"; do _tx_record "apt_install:$p" "${TX_SUDO:-env}" apt-get remove -y "$p"; done
+}
+tx_pacman_install() {
+  local p
+  for p in "$@"; do
+    _tx_record "pacman_install:$p" "${TX_SUDO:-env}" pacman -Rns --noconfirm "$p"
+  done
 }
 # tx_brew_self: record that THIS run installed Homebrew itself, so rollback
 # removes the whole prefix. Only call when brew was absent before the run.
@@ -166,5 +173,5 @@ tx_commit() {
 }
 
 export -f tx_init _tx_have_jq _tx_record tx_brew_install tx_brew_cask \
-  tx_apt_install tx_brew_self tx_git_clone tx_mkdir tx_symlink tx_run \
+  tx_apt_install tx_pacman_install tx_brew_self tx_git_clone tx_mkdir tx_symlink tx_run \
   _tx_exec_undo tx_rollback tx_commit 2>/dev/null || true

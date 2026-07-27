@@ -36,6 +36,24 @@ export DRY_RUN PLAN_MODE
 
 SELF_DIR="$( cd "$( dirname "${BASH_SOURCE[0]:-/dev/null}" )" 2>/dev/null && pwd )"
 if [ -n "$SELF_DIR" ] && [ -d "$SELF_DIR/steps" ] && [ -d "$SELF_DIR/profiles" ]; then
+  # ~/.dotfiles is the canonical location even when the user initially cloned
+  # the repository elsewhere (for example ~/dev/dotfiles). Move the whole clone
+  # before sourcing any repo files, then restart from its stable path. Preview
+  # and verification modes remain read-only and use the clone in place.
+  if [ "$SELF_DIR" != "$CLONE_DIR" ] && [ "$DRY_RUN" != 1 ] && [ "$CHECK_ONLY" != 1 ]; then
+    if [ -e "$CLONE_DIR" ]; then
+      echo "ERROR: cannot move dotfiles to $CLONE_DIR because that path already exists." >&2
+      echo "Move or remove it, then re-run $SELF_DIR/install.sh." >&2
+      exit 1
+    fi
+    echo "Moving dotfiles from $SELF_DIR to $CLONE_DIR..."
+    mkdir -p "$(dirname "$CLONE_DIR")"
+    mv "$SELF_DIR" "$CLONE_DIR" || {
+      echo "ERROR: failed to move dotfiles to $CLONE_DIR." >&2
+      exit 1
+    }
+    exec "$CLONE_DIR/install.sh" "$@"
+  fi
   DOTFILES_DIR="$SELF_DIR"
 else
   # Fetch the repo WITHOUT git. A vanilla macOS has no git until the Xcode CLT
@@ -182,6 +200,37 @@ STEP_TOTAL=$(grep -cvE '^\s*(#|$)' "$PROFILE_FILE")
 
 banner "Base setup · public dotfiles"
 
+# Authenticate sudo once and keep its terminal-scoped timestamp alive while the
+# Linux install runs. Individual steps and the later AUR phase can then elevate
+# without repeatedly asking for the same password.
+SUDO_KEEPALIVE_PID=""
+sudo_keepalive_stop() {
+  if [ -n "$SUDO_KEEPALIVE_PID" ]; then
+    kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
+    wait "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
+  fi
+}
+if [ "$OS_TYPE" = "Linux" ] && [ "$(id -u)" -ne 0 ] && [ "$DRY_RUN" != 1 ]; then
+  command -v sudo >/dev/null 2>&1 || {
+    note "sudo is required for Linux package installation"
+    exit 1
+  }
+  note "Authenticating sudo once for this install..."
+  sudo -v || {
+    note "sudo authentication failed"
+    exit 1
+  }
+  _sudo_parent_pid="$$"
+  (
+    while kill -0 "$_sudo_parent_pid" 2>/dev/null; do
+      sleep 50
+      sudo -n -v 2>/dev/null || exit
+    done
+  ) &
+  SUDO_KEEPALIVE_PID=$!
+  trap sudo_keepalive_stop EXIT
+fi
+
 # step_title 01-packages.sh -> "packages" : strip NN- prefix and .sh, spaces for dashes.
 step_title() { local s="${1#*-}"; s="${s%.sh}"; echo "${s//-/ }"; }
 
@@ -242,7 +291,7 @@ fi
 # -----------------------------------------------------------------------------
 #  Connect & authenticate (opt-in) — wire up the 1Password SSH agent + GitHub CLI
 #  so private overlays can be fetched. Generic: only ever names 1Password/GitHub,
-#  never any private repo. macOS only (1Password app + op CLI).
+#  never any private repo. Supports macOS and Arch/Debian Linux desktops.
 # -----------------------------------------------------------------------------
 OP_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 ZLOCAL="$HOME/.zshrc.local"   # machine-local overlay sourced by the thin ~/.zshrc
@@ -252,6 +301,102 @@ append_once() {
   local f="$1" marker="$2" line="$3"
   mkdir -p "$(dirname "$f")"; touch "$f"
   grep -qF "$marker" "$f" 2>/dev/null || printf '%s\n' "$line" >> "$f"
+}
+
+# github_ssh_ready: private overlays clone over git@github.com, which uses the
+# 1Password SSH agent rather than the PAT configured by `op plugin init gh`.
+# Verify that independent authentication path before running a bootstrap that
+# would otherwise continue after a failed clone and emit misleading errors.
+github_ssh_ready() {
+  if ! SSH_AUTH_SOCK="${SSH_AUTH_SOCK:-}" ssh-add -l >/dev/null 2>&1; then
+    note "The 1Password SSH agent is not exposing any keys."
+    note "Unlock 1Password and ensure your SSH Key item is available to its agent."
+    return 1
+  fi
+  local ssh_result
+  ssh_result="$(ssh -o BatchMode=yes -o ConnectTimeout=15 -T git@github.com 2>&1 || true)"
+  if grep -q 'successfully authenticated' <<<"$ssh_result"; then
+    return 0
+  fi
+  note "GitHub did not accept any key offered by the 1Password SSH agent."
+  note "Add the public key from your 1Password SSH Key item to GitHub > Settings > SSH and GPG keys."
+  return 1
+}
+
+apply_private_overlay() {
+  local private_dir="$HOME/.***REMOVED***" private_repo
+  private_repo="$(op item get dotfiles-bootstrap --vault Personal \
+    --fields private_repo 2>/dev/null)" || return 1
+  [ -n "$private_repo" ] || return 1
+  if [ -d "$private_dir/.git" ]; then
+    git -C "$private_dir" pull --ff-only || return 1
+  else
+    git clone "git@github.com:$private_repo.git" "$private_dir" || return 1
+  fi
+  bash "$private_dir/install.sh"
+}
+
+# configure_1password_ssh_agent_linux: make SSH Key items from every signed-in
+# 1Password account available to the Linux agent, including keys stored outside
+# the default Personal/Private/Employee vaults. On a personal Linux machine,
+# expose only the personal GitHub key so a work key cannot be selected first.
+configure_1password_ssh_agent_linux() {
+  command -v op >/dev/null 2>&1 || return 1
+  command -v jq >/dev/null 2>&1 || {
+    note "jq is required to configure 1Password SSH keys automatically."
+    return 1
+  }
+
+  local agent_dir="$HOME/.config/1Password/ssh"
+  local agent_file="$agent_dir/agent.toml"
+  local marker="# Managed by dotfiles · generated from 1Password SSH Key items"
+  if [ -f "$agent_file" ] && ! grep -qF "$marker" "$agent_file"; then
+    note "Keeping existing unmanaged 1Password agent config: $agent_file"
+    return 0
+  fi
+
+  local accounts_json account_uuid keys_json
+  accounts_json="$(op account list --format=json)" || {
+    note "Could not list signed-in 1Password accounts."
+    return 1
+  }
+
+  local all_keys=() github_keys=() personal_github_keys=() key_id key_title
+  while IFS= read -r account_uuid; do
+    [ -n "$account_uuid" ] || continue
+    keys_json="$(op item list --account "$account_uuid" --categories 'SSH Key' --format=json)" || continue
+    while IFS=$'\t' read -r key_id key_title; do
+      [ -n "$key_id" ] || continue
+      all_keys+=("$key_id")
+      if [[ "$key_title" =~ [Gg]it[Hh]ub ]]; then github_keys+=("$key_id"); fi
+      if [[ "$key_title" =~ [Gg]it[Hh]ub ]] && [[ "$key_title" =~ [Pp]ersonal ]]; then
+        personal_github_keys+=("$key_id")
+      fi
+    done < <(jq -r '.[] | [.id, .title] | @tsv' <<<"$keys_json")
+  done < <(jq -r '.[].account_uuid // empty' <<<"$accounts_json")
+
+  local selected_keys=("${all_keys[@]}")
+  if [ "$OS_TYPE" = "Linux" ] && [ "${#personal_github_keys[@]}" -gt 0 ]; then
+    selected_keys=("${personal_github_keys[@]}")
+  elif [ "${#github_keys[@]}" -gt 0 ]; then
+    selected_keys=("${github_keys[@]}")
+  fi
+  if [ "${#selected_keys[@]}" -eq 0 ]; then
+    note "No 1Password items of type SSH Key were found."
+    return 1
+  fi
+
+  mkdir -p "$agent_dir"
+  local tmp_file="$agent_file.tmp.$$"
+  {
+    printf '%s\n' "$marker"
+    for key_id in "${selected_keys[@]}"; do
+      printf '\n[[ssh-keys]]\nitem = "%s"\n' "$key_id"
+    done
+  } > "$tmp_file"
+  chmod 600 "$tmp_file"
+  mv "$tmp_file" "$agent_file"
+  ok "1Password SSH agent configured with ${#selected_keys[@]} key(s)"
 }
 
 if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
@@ -307,24 +452,108 @@ if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
   fi
 
   banner "Next · private overlays"
-  # The bootstrap script lives in the 1Password Secure Note (no private repo names
-  # in this public repo). We can run it right here: SSH_AUTH_SOCK is already
-  # exported and the op gh plugin is sourced into this session below — so there's
-  # nothing to reload first.
-  BOOTSTRAP='op://Personal/dotfiles-bootstrap/bootstrap_script'
   if command -v op >/dev/null 2>&1 && confirm "Apply private overlays now?"; then
-    # Load the op gh plugin alias into THIS session so the bootstrap's gh calls
-    # authenticate via 1Password without a shell reload.
-    [ -f "$HOME/.config/op/plugins.sh" ] && source "$HOME/.config/op/plugins.sh"
-    note "fetching bootstrap from 1Password and applying overlays..."
-    if ! op read "$BOOTSTRAP" 2>/dev/null | bash; then
-      note "bootstrap did not complete — run it manually:"
-      info "op read \"$BOOTSTRAP\" | bash"
+    if github_ssh_ready; then
+      # Load the op gh plugin alias into THIS session so the bootstrap's gh calls
+      # authenticate via 1Password without a shell reload.
+      [ -f "$HOME/.config/op/plugins.sh" ] && source "$HOME/.config/op/plugins.sh"
+      note "fetching and applying private overlay..."
+      if ! apply_private_overlay; then
+        note "private overlay did not complete"
+        info "Re-run: ~/.***REMOVED***/install.sh"
+      fi
+    else
+      note "Private overlays skipped until GitHub SSH authentication works."
+      info "Test after fixing the key: ssh -T git@github.com"
     fi
   else
     note "Apply your private overlays later with:"
-    info "op read \"$BOOTSTRAP\" | bash"
+    info "Re-run this installer and choose to apply private overlays."
     note "(reload the shell first if gh isn't authenticated yet: exec zsh)"
+  fi
+elif [ "$OS_TYPE" = "Linux" ] \
+  && { [ "$PACKAGE_MANAGER" = "pacman" ] || [ "$PACKAGE_MANAGER" = "apt" ]; } \
+  && [ "$PROFILE" = "desktop" ] && [ "$HEADLESS" = "no" ] \
+  && confirm "Install and configure 1Password now?"; then
+  banner "Connect & authenticate · 1Password, GitHub, SSH"
+
+  if [ "$PACKAGE_MANAGER" = pacman ]; then
+    task "1Password · app + CLI from AUR"
+    op_installer="$DOTFILES_DIR/scripts/install-1password-arch.sh"
+  else
+    task "1Password · app + CLI from official APT repository"
+    op_installer="$DOTFILES_DIR/scripts/install-1password-debian.sh"
+  fi
+  if bash "$op_installer"; then
+    ok "1Password app and CLI are up to date"
+  else
+    note "1Password installation did not complete"
+    info "Re-run: bash \"$op_installer\""
+  fi
+
+  if command -v 1password >/dev/null 2>&1; then
+    nohup 1password >/dev/null 2>&1 &
+  else
+    note "Open 1Password from your desktop application menu after installation."
+  fi
+  note "In the 1Password app:"
+  note "1. Sign in to your 1Password account"
+  note "2. Settings > Developer > enable \"Use the SSH agent\""
+  note "3. Settings > Developer > enable \"Integrate with 1Password CLI\""
+  confirm "Done? Continue" || true
+
+  task "SSH agent · 1Password"
+  LINUX_OP_SOCK="$HOME/.1password/agent.sock"
+  export SSH_AUTH_SOCK="$LINUX_OP_SOCK"
+  append_once "$ZLOCAL" '.1password/agent.sock' \
+    'export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"'
+  append_once "$HOME/.ssh/config" '.1password/agent.sock' \
+    'Host *
+  IdentityAgent ~/.1password/agent.sock'
+  chmod 600 "$HOME/.ssh/config" 2>/dev/null || true
+  if configure_1password_ssh_agent_linux; then
+    if ssh-add -l >/dev/null 2>&1; then
+      ok "SSH configured to use the 1Password agent"
+    else
+      note "Lock and unlock 1Password once to reload the generated SSH agent config."
+      confirm "Done? Re-check SSH keys" || true
+      if ssh-add -l >/dev/null 2>&1; then
+        ok "SSH configured to use the 1Password agent"
+      else
+        note "1Password agent still exposes no SSH identities."
+      fi
+    fi
+  else
+    note "1Password SSH agent setup did not complete."
+  fi
+
+  task "GitHub CLI · 1Password shell plugin"
+  if command -v op >/dev/null 2>&1; then
+    op plugin init gh </dev/tty || note "op plugin init gh did not complete"
+    append_once "$ZLOCAL" 'op/plugins.sh' \
+      '[ -f "$HOME/.config/op/plugins.sh" ] && source "$HOME/.config/op/plugins.sh"'
+    rm -f "$HOME/.config/gh/hosts.yml" 2>/dev/null || true
+    ok "gh plugin wired into ~/.zshrc.local"
+  else
+    note "1Password CLI unavailable — install 1password-cli and run 'op plugin init gh'"
+  fi
+
+  banner "Next · private overlays"
+  if command -v op >/dev/null 2>&1 && confirm "Apply private overlays now?"; then
+    if github_ssh_ready; then
+      [ -f "$HOME/.config/op/plugins.sh" ] && source "$HOME/.config/op/plugins.sh"
+      note "fetching and applying private overlay..."
+      if ! apply_private_overlay; then
+        note "private overlay did not complete"
+        info "Re-run: ~/.***REMOVED***/install.sh"
+      fi
+    else
+      note "Private overlays skipped until GitHub SSH authentication works."
+      info "Test after fixing the key: ssh -T git@github.com"
+    fi
+  else
+    note "Apply your private overlays later with:"
+    info "Re-run this installer and choose to apply private overlays."
   fi
 else
   [ "$OS_TYPE" = "Darwin" ] && info "Skipped authentication. Run it later from the 1Password handoff."

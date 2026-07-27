@@ -64,9 +64,13 @@ if [ "$OS_TYPE" = "Linux" ]; then
   if [ -n "$ZSH_PATH" ] && [ "$CURRENT_SHELL" != "$ZSH_PATH" ]; then
     echo "Setting default shell to zsh..."
     if command -v chsh >/dev/null 2>&1; then
+      CHSH_PREFIX=""
+      if [ "$(id -u)" -ne 0 ]; then
+        command -v sudo >/dev/null 2>&1 && CHSH_PREFIX=sudo
+      fi
       # Undo: set the login shell back to whatever it was before this run.
-      [ "${DRY_RUN:-0}" != 1 ] && tx_run "chsh:$(whoami)" sudo chsh -s "$CURRENT_SHELL" "$(whoami)" -- true
-      run sudo chsh -s "$ZSH_PATH" "$(whoami)" || true
+      [ "${DRY_RUN:-0}" != 1 ] && tx_run "chsh:$(whoami)" $CHSH_PREFIX chsh -s "$CURRENT_SHELL" "$(whoami)" -- true
+      run $CHSH_PREFIX chsh -s "$ZSH_PATH" "$(whoami)" || true
     elif [ "${DRY_RUN:-0}" = 1 ]; then
       echo "[dry-run] append 'export SHELL=$ZSH_PATH' and 'exec $ZSH_PATH' to ~/.bashrc"
     else

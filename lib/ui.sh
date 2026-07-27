@@ -55,10 +55,10 @@ UI_GUM_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gum-fork"
 UI_GUM_BIN="$UI_GUM_DIR/gum"
 
 # ui_gum_asset: the release asset name for this platform, or "" if unsupported.
-# The fork ships gum-<os>-<arch> binaries (darwin-arm64, linux-arm64).
 ui_gum_asset() {
   case "$(uname)-$(uname -m)" in
     Darwin-arm64) echo "gum-darwin-arm64" ;;
+    Linux-x86_64|Linux-amd64) echo "gum-linux-amd64" ;;
     Linux-aarch64|Linux-arm64) echo "gum-linux-arm64" ;;
     *) echo "" ;;
   esac
@@ -69,9 +69,9 @@ ui_gum_asset() {
 ui_ensure_gum() {
   [ "$UI_GUM_USE_FORK" = 1 ] || return 0
   [ -x "$UI_GUM_BIN" ] && return 0
-  local asset; asset="$(ui_gum_asset)"; [ -n "$asset" ] || return 0
   command -v curl >/dev/null 2>&1 || return 0
   mkdir -p "$UI_GUM_DIR" 2>/dev/null || return 0
+  local asset; asset="$(ui_gum_asset)"; [ -n "$asset" ] || return 0
   local url="https://github.com/$UI_GUM_REPO/releases/download/$UI_GUM_TAG/$asset"
   if curl -fsSL "$url" -o "$UI_GUM_BIN" 2>/dev/null; then
     chmod +x "$UI_GUM_BIN" 2>/dev/null || true
