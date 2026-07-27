@@ -17,7 +17,7 @@
 #   tx_apt_install <pkg...>            # undo: apt-get remove -y <pkg>
 #   tx_pacman_install <pkg...>         # undo: pacman -Rns --noconfirm <pkg>
 #   tx_dnf_install <pkg...>            # undo: dnf remove -y <pkg>
-#   tx_git_clone <url> <dest>          # undo: rm -rf <dest>
+#   tx_git_clone <url> <dest>          # undo: move <dest> to recoverable trash
 #   tx_mkdir <dir>                     # undo: rmdir <dir>  (only if WE create it)
 #   tx_symlink <src> <dst>             # undo: restore prior target / remove
 #   tx_run "<op>" <undo-argv...> -- <do-argv...>   # generic escape hatch
@@ -34,6 +34,8 @@ export DOTFILES_INSTALLER_API
 
 TX_LOG="${TX_LOG:-$HOME/.dotfiles-install.jsonl}"
 TX_LAST="${TX_LAST:-$HOME/.dotfiles-install.last.jsonl}"
+TX_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$TX_LIB_DIR/trash.sh"
 
 # tx_init: start a fresh transaction log for this run.
 tx_init() {
@@ -62,16 +64,16 @@ print(json.dumps({"op":os.environ["OP"],"undo":sys.argv[1:]},ensure_ascii=False)
 # _tx_record_backup OP BACKUP UNDO_ARGV...: record an undo that consumes a
 # temporary backup on rollback and removes that backup only after commit.
 _tx_record_backup() {
-  local op="$1" backup="$2"; shift 2
+  local op="$1" backup="$2" cleanup_dest="$3"; shift 3
   if _tx_have_jq; then
     local args_json cleanup_json
     args_json=$(printf '%s\n' "$@" | jq -R . | jq -cs .)
-    cleanup_json=$(printf '%s\n' rm -f "$backup" | jq -R . | jq -cs .)
+    cleanup_json=$(printf '%s\n' mv "$backup" "$cleanup_dest" | jq -R . | jq -cs .)
     printf '{"op":%s,"undo":%s,"cleanup":%s}\n' \
       "$(printf '%s' "$op" | jq -R .)" "$args_json" "$cleanup_json" >> "$TX_LOG"
   else
-    OP="$op" BACKUP="$backup" python3 -c 'import json,os,sys
-print(json.dumps({"op":os.environ["OP"],"undo":sys.argv[1:],"cleanup":["rm","-f",os.environ["BACKUP"]]},ensure_ascii=False))' \
+    OP="$op" BACKUP="$backup" CLEANUP_DEST="$cleanup_dest" python3 -c 'import json,os,sys
+print(json.dumps({"op":os.environ["OP"],"undo":sys.argv[1:],"cleanup":["mv",os.environ["BACKUP"],os.environ["CLEANUP_DEST"]]},ensure_ascii=False))' \
       "$@" >> "$TX_LOG"
   fi
 }
@@ -100,13 +102,24 @@ tx_dnf_install() {
   local p
   for p in "$@"; do _tx_record "dnf_install:$p" "${TX_SUDO:-env}" dnf remove -y "$p"; done
 }
-# tx_brew_self: record that THIS run installed Homebrew itself, so rollback
-# removes the whole prefix. Only call when brew was absent before the run.
+# tx_brew_self: record a new Homebrew prefix for recoverable rollback. An
+# existing prefix is never moved because it may contain unrelated user files.
 tx_brew_self() {
-  _tx_record "brew_self" rm -rf /opt/homebrew
+  local prefix="${HOMEBREW_PREFIX:-}"
+  if [ -z "$prefix" ]; then
+    case "$(uname -m)" in arm64|aarch64) prefix=/opt/homebrew ;; *) prefix=/usr/local ;; esac
+  fi
+  [ -e "$prefix" ] && return 0
+  local trash_dest
+  setup_trash_dir >/dev/null
+  trash_dest="$(setup_trash_destination "homebrew-prefix-$RANDOM")"
+  _tx_record "brew_self:$prefix" mv "$prefix" "$trash_dest"
 }
 tx_git_clone() {  # url dest
-  _tx_record "git_clone:$2" rm -rf "$2"
+  local trash_dest
+  setup_trash_dir >/dev/null
+  trash_dest="$(setup_trash_destination "clone-$(basename "$2")-$RANDOM")"
+  _tx_record "git_clone:$2" mv "$2" "$trash_dest"
 }
 tx_mkdir() {  # dir — only record if we actually create it
   local d="$1"
@@ -119,11 +132,16 @@ tx_symlink() {  # src dst
     local prev; prev=$(readlink "$dst")
     _tx_record "symlink:$dst" ln -sfn "$prev" "$dst"
   elif [ -e "$dst" ]; then
-    local bak="$dst.txbak.$$"
-    mv "$dst" "$bak"
-    _tx_record "symlink:$dst" mv "$bak" "$dst"
+    local trash_dest
+    setup_trash_dir >/dev/null
+    trash_dest="$(setup_trash_destination "replaced-$(basename "$dst")-$RANDOM")"
+    mv "$dst" "$trash_dest"
+    _tx_record "symlink:$dst" mv "$trash_dest" "$dst"
   else
-    _tx_record "symlink:$dst" rm -f "$dst"
+    local new_link_trash
+    setup_trash_dir >/dev/null
+    new_link_trash="$(setup_trash_destination "link-$(basename "$dst")-$RANDOM")"
+    _tx_record "symlink:$dst" mv "$dst" "$new_link_trash"
   fi
   ln -sfn "$src" "$dst"
 }
@@ -141,10 +159,12 @@ tx_run() {
 }
 
 # tx_backup_path OP PATH BACKUP: move PATH aside while retaining enough state
-# for rollback. The backup is deleted by tx_commit after the full install passes.
+# for rollback. After commit the prior value is kept in recoverable trash.
 tx_backup_path() {
-  local op="$1" path="$2" backup="$3"
-  _tx_record_backup "$op" "$backup" mv "$backup" "$path"
+  local op="$1" path="$2" backup="$3" cleanup_dest
+  setup_trash_dir >/dev/null
+  cleanup_dest="$(setup_trash_destination "backup-$(basename "$path")-$RANDOM")"
+  _tx_record_backup "$op" "$backup" "$cleanup_dest" mv "$backup" "$path"
   mv "$path" "$backup"
 }
 

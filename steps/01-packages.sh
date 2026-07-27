@@ -38,7 +38,8 @@ if [ "$OS_TYPE" = "Darwin" ]; then
     if [ "${DRY_RUN:-0}" = 1 ]; then
       echo "[dry-run] install Homebrew (interactive via /dev/tty, or NONINTERACTIVE if no tty)"
     else
-      # Record the prefix first so a failed install rolls back (rm -rf /opt/homebrew).
+      # Record a previously absent prefix first so a failed install can move it
+      # to recoverable trash without touching an existing /usr/local tree.
       tx_brew_self
       brew_installer="$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
       if [ -r /dev/tty ]; then
@@ -46,14 +47,18 @@ if [ "$OS_TYPE" = "Darwin" ]; then
       else
         env -u INTERACTIVE NONINTERACTIVE=1 /bin/bash -c "$brew_installer"
       fi
-      eval "$(/opt/homebrew/bin/brew shellenv)"
+      if [ -x /opt/homebrew/bin/brew ]; then brew_bin=/opt/homebrew/bin/brew
+      elif [ -x /usr/local/bin/brew ]; then brew_bin=/usr/local/bin/brew
+      else brew_bin=""
+      fi
+      [ -z "$brew_bin" ] || eval "$("$brew_bin" shellenv)"
     fi
   fi
 
   # If brew install left the directory but no binary (the symptom of an
   # interrupted install), fail. The orchestrator's rollback will remove the
-  # partial /opt/homebrew (recorded by tx_brew_self above) so the next run
-  # starts clean — no manual `rm -rf` needed.
+  # newly created prefix to recoverable trash (recorded by tx_brew_self above)
+  # so the next run starts clean.
   if [ "${DRY_RUN:-0}" != 1 ] && ! command -v brew >/dev/null 2>&1; then
     echo "[01] ERROR: brew missing after install attempt." >&2
     exit 1

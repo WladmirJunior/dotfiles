@@ -25,6 +25,7 @@ TX_LOG="$TMP/tx.jsonl"
 TX_LAST="$TMP/tx.last.jsonl"
 source "$ROOT/lib/transaction.sh"
 [ "$DOTFILES_INSTALLER_API" = 1 ]
+SETUP_TRASH_DIR="$TMP/trash"
 printf 'original\n' > "$TMP/config"
 tx_init
 tx_backup_path "backup:test" "$TMP/config" "$TMP/config.backup"
@@ -39,6 +40,22 @@ printf 'replacement\n' > "$TMP/config"
 tx_commit
 [ ! -e "$TMP/config.backup" ]
 grep -qx replacement "$TMP/config"
+compgen -G "$TMP/trash/backup-config-*" >/dev/null
+
+tx_init
+mkdir "$TMP/new-clone"
+printf 'partial\n' > "$TMP/new-clone/file"
+tx_git_clone example.invalid/repo "$TMP/new-clone"
+tx_rollback >/dev/null
+[ ! -e "$TMP/new-clone" ]
+compgen -G "$TMP/trash/clone-new-clone-*/file" >/dev/null
+
+tx_init
+tx_symlink "$TMP/config" "$TMP/new-link"
+[ -L "$TMP/new-link" ]
+tx_rollback >/dev/null
+[ ! -e "$TMP/new-link" ]
+compgen -G "$TMP/trash/link-new-link-*" >/dev/null
 
 source "$ROOT/lib/setup/selection.sh"
 component_installed() {
