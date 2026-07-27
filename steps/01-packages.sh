@@ -211,4 +211,43 @@ else
   echo "Unsupported OS/distribution: $OS_TYPE (${DISTRO_ID:-unknown}); supported Linux families: Arch, Debian and Fedora." >&2
   exit 1
 fi
+
+# Optional terminal multiplexer. It belongs to the CLI packages category and
+# starts selected in the interactive setup. Automation can set
+# WANT_TMUX=yes|no explicitly; non-interactive runs preserve the old skip
+# behavior unless opted in.
+want_tmux="${WANT_TMUX:-}"
+if command -v tmux >/dev/null 2>&1; then
+  echo "  tmux: already installed"
+elif [ -z "$want_tmux" ] && [ "${DRY_RUN:-0}" != 1 ] \
+   && command -v pick >/dev/null 2>&1; then
+  PICK_SELECTED="tmux"
+  tmux_selection="$(pick "Optional CLI packages" tmux)"
+  case ",$tmux_selection," in
+    *,tmux,*) want_tmux=yes ;;
+    *) want_tmux=no ;;
+  esac
+fi
+
+if [ "${want_tmux:-no}" = yes ]; then
+  case "$OS_TYPE:${PACKAGE_MANAGER:-}" in
+    Darwin:*)
+      [ "${DRY_RUN:-0}" != 1 ] && tx_brew_install tmux
+      run brew install tmux
+      ;;
+    Linux:pacman)
+      [ "${DRY_RUN:-0}" != 1 ] && tx_pacman_install tmux
+      run ${SUDO:-} pacman -S --needed --noconfirm tmux
+      ;;
+    Linux:dnf)
+      [ "${DRY_RUN:-0}" != 1 ] && tx_dnf_install tmux
+      run ${SUDO:-} dnf install -y tmux
+      ;;
+    Linux:*)
+      [ "${DRY_RUN:-0}" != 1 ] && tx_apt_install tmux
+      run ${SUDO:-} env DEBIAN_FRONTEND=noninteractive apt-get install -y tmux
+      ;;
+  esac
+fi
+
 echo "[01] done"
