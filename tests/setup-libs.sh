@@ -51,6 +51,14 @@ tx_rollback >/dev/null
 compgen -G "$TMP/trash/clone-new-clone-*/file" >/dev/null
 
 tx_init
+tx_created_path "$TMP/generated"
+mkdir "$TMP/generated"
+printf 'generated\n' > "$TMP/generated/file"
+tx_rollback >/dev/null
+[ ! -e "$TMP/generated" ]
+compgen -G "$TMP/trash/created-generated-*/file" >/dev/null
+
+tx_init
 tx_symlink "$TMP/config" "$TMP/new-link"
 [ -L "$TMP/new-link" ]
 tx_rollback >/dev/null

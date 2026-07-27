@@ -18,6 +18,7 @@
 #   tx_pacman_install <pkg...>         # undo: pacman -Rns --noconfirm <pkg>
 #   tx_dnf_install <pkg...>            # undo: dnf remove -y <pkg>
 #   tx_git_clone <url> <dest>          # undo: move <dest> to recoverable trash
+#   tx_created_path <path> [label]      # undo: move a new path to recoverable trash
 #   tx_mkdir <dir>                     # undo: rmdir <dir>  (only if WE create it)
 #   tx_symlink <src> <dst>             # undo: restore prior target / remove
 #   tx_run "<op>" <undo-argv...> -- <do-argv...>   # generic escape hatch
@@ -120,6 +121,13 @@ tx_git_clone() {  # url dest
   setup_trash_dir >/dev/null
   trash_dest="$(setup_trash_destination "clone-$(basename "$2")-$RANDOM")"
   _tx_record "git_clone:$2" mv "$2" "$trash_dest"
+}
+tx_created_path() {  # path [label]
+  local path="$1" label="${2:-created-$(basename "$1")}" trash_dest
+  if [ -e "$path" ] || [ -L "$path" ]; then return 0; fi
+  setup_trash_dir >/dev/null
+  trash_dest="$(setup_trash_destination "$label-$RANDOM")"
+  _tx_record "created:$path" mv "$path" "$trash_dest"
 }
 tx_mkdir() {  # dir — only record if we actually create it
   local d="$1"
@@ -254,5 +262,6 @@ tx_commit() {
 }
 
 export -f tx_init _tx_have_jq _tx_record _tx_record_backup tx_brew_install tx_brew_cask \
-  tx_apt_install tx_pacman_install tx_dnf_install tx_brew_self tx_git_clone tx_mkdir tx_symlink tx_run \
+  tx_apt_install tx_pacman_install tx_dnf_install tx_brew_self tx_git_clone tx_created_path \
+  tx_mkdir tx_symlink tx_run \
   tx_backup_path _tx_exec_undo _tx_exec_cleanup tx_rollback tx_commit 2>/dev/null || true
