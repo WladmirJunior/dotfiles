@@ -1,6 +1,6 @@
 # dotfiles
 
-Dev environment setup for macOS and Linux (Arch and Debian families, including
+Dev environment setup for macOS and Linux (Arch, Debian and Fedora families, including
 EndeavourOS/CachyOS, Ubuntu and Kali).
 
 The installer detects the host (physical Mac, Mac VM, or Linux/VM) and skips GUI apps that only make sense on a physical machine.

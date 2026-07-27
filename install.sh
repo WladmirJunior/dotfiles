@@ -291,7 +291,7 @@ fi
 # -----------------------------------------------------------------------------
 #  Connect & authenticate (opt-in) — wire up the 1Password SSH agent + GitHub CLI
 #  so private overlays can be fetched. Generic: only ever names 1Password/GitHub,
-#  never any private repo. Supports macOS and Arch/Debian Linux desktops.
+#  never any private repo. Supports macOS and Arch/Debian/Fedora Linux desktops.
 # -----------------------------------------------------------------------------
 OP_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 ZLOCAL="$HOME/.zshrc.local"   # machine-local overlay sourced by the thin ~/.zshrc
@@ -472,7 +472,7 @@ if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
     note "(reload the shell first if gh isn't authenticated yet: exec zsh)"
   fi
 elif [ "$OS_TYPE" = "Linux" ] \
-  && { [ "$PACKAGE_MANAGER" = "pacman" ] || [ "$PACKAGE_MANAGER" = "apt" ]; } \
+  && { [ "$PACKAGE_MANAGER" = "pacman" ] || [ "$PACKAGE_MANAGER" = "apt" ] || [ "$PACKAGE_MANAGER" = "dnf" ]; } \
   && [ "$PROFILE" = "desktop" ] && [ "$HEADLESS" = "no" ] \
   && confirm "Install and configure 1Password now?"; then
   banner "Connect & authenticate · 1Password, GitHub, SSH"
@@ -480,9 +480,12 @@ elif [ "$OS_TYPE" = "Linux" ] \
   if [ "$PACKAGE_MANAGER" = pacman ]; then
     task "1Password · app + CLI from AUR"
     op_installer="$DOTFILES_DIR/scripts/install-1password-arch.sh"
-  else
+  elif [ "$PACKAGE_MANAGER" = apt ]; then
     task "1Password · app + CLI from official APT repository"
     op_installer="$DOTFILES_DIR/scripts/install-1password-debian.sh"
+  else
+    task "1Password · app + CLI from official RPM repository"
+    op_installer="$DOTFILES_DIR/scripts/install-1password-fedora.sh"
   fi
   if bash "$op_installer"; then
     ok "1Password app and CLI are up to date"

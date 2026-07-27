@@ -128,6 +128,11 @@ elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "pacman" ]; then
   PACMAN_PKGS="neovim fzf zoxide bat ripgrep fd git-delta eza tealdeer yazi hexyl fastfetch 7zip resvg perl-image-exiftool glow pkgfile jq gum"
   # zsh/git/curl/nodejs stay: likely predate the dotfiles or are system deps.
   run $SUDO pacman -Rns --noconfirm $PACMAN_PKGS 2>/dev/null || note "some pacman packages kept"
+elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "dnf" ]; then
+  task "dnf packages"
+  SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO=sudo
+  DNF_PKGS="neovim fzf zoxide bat ripgrep fd-find git-delta eza tealdeer yazi hexyl fastfetch p7zip p7zip-plugins resvg perl-Image-ExifTool glow"
+  run $SUDO dnf remove -y $DNF_PKGS 2>/dev/null || note "some dnf packages kept"
 fi
 
 # -- 04-apps: Touch ID for sudo (needs sudo, best-effort) -----------------------

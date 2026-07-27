@@ -16,9 +16,10 @@ if [ "$OS_TYPE" = "Darwin" ]; then
 elif [ "$OS_TYPE" = "Linux" ]; then
   # /etc/os-release is the stable distro interface. ID_LIKE lets derivatives
   # (EndeavourOS, CachyOS, Kali, Ubuntu, etc.) inherit the right package path.
-  if [ -r /etc/os-release ]; then
-    DISTRO_ID="$(. /etc/os-release; printf '%s' "${ID:-linux}")"
-    _id_like="$(. /etc/os-release; printf '%s' "${ID_LIKE:-}")"
+  OS_RELEASE_FILE="${OS_RELEASE_FILE:-/etc/os-release}"
+  if [ -r "$OS_RELEASE_FILE" ]; then
+    DISTRO_ID="$(. "$OS_RELEASE_FILE"; printf '%s' "${ID:-linux}")"
+    _id_like="$(. "$OS_RELEASE_FILE"; printf '%s' "${ID_LIKE:-}")"
   else
     DISTRO_ID="linux"
     _id_like=""
@@ -26,10 +27,14 @@ elif [ "$OS_TYPE" = "Linux" ]; then
   case " $DISTRO_ID $_id_like " in
     *" arch "*)   DISTRO_FAMILY="arch"; PACKAGE_MANAGER="pacman" ;;
     *" debian "*) DISTRO_FAMILY="debian"; PACKAGE_MANAGER="apt" ;;
+    *" fedora "*|*" rhel "*|*" centos "*) DISTRO_FAMILY="fedora"; PACKAGE_MANAGER="dnf" ;;
     *)
       command -v pacman >/dev/null 2>&1 && { DISTRO_FAMILY="arch"; PACKAGE_MANAGER="pacman"; }
       if [ -z "$PACKAGE_MANAGER" ] && command -v apt-get >/dev/null 2>&1; then
         DISTRO_FAMILY="debian"; PACKAGE_MANAGER="apt"
+      fi
+      if [ -z "$PACKAGE_MANAGER" ] && command -v dnf >/dev/null 2>&1; then
+        DISTRO_FAMILY="fedora"; PACKAGE_MANAGER="dnf"
       fi
       ;;
   esac

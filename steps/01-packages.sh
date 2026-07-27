@@ -8,7 +8,7 @@ source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
 # failure. When the lib isn't sourced (step run standalone), the tx_* calls
 # below are stubbed to no-ops so the step still works on its own.
 [ -f "${DOTFILES_DIR:-.}/lib/transaction.sh" ] && source "${DOTFILES_DIR:-.}/lib/transaction.sh" 2>/dev/null || true
-for fn in tx_brew_install tx_brew_cask tx_apt_install tx_pacman_install tx_brew_self; do
+for fn in tx_brew_install tx_brew_cask tx_apt_install tx_pacman_install tx_dnf_install tx_brew_self; do
   command -v "$fn" >/dev/null 2>&1 || eval "$fn() { :; }"
 done
 command -v run >/dev/null 2>&1 || run() { [ "${DRY_RUN:-0}" = 1 ] && { echo "[dry-run] $*"; return 0; }; "$@"; }
@@ -171,8 +171,28 @@ elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "pacman" ]; then
       echo "  warning: pkgfile database is unavailable; run 'sudo pkgfile --update' later"
     fi
   fi
+elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "dnf" ]; then
+  SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO=sudo
+  TX_SUDO="$SUDO"
+  DNF_CORE="zsh neovim fzf zoxide bat ripgrep fd-find nodejs npm curl git gh wget jq"
+  DNF_NEW=""
+  for pkg in $DNF_CORE; do rpm -q "$pkg" >/dev/null 2>&1 || DNF_NEW="$DNF_NEW $pkg"; done
+  [ "${DRY_RUN:-0}" = 1 ] || [ -z "$DNF_NEW" ] || tx_dnf_install $DNF_NEW
+  run $SUDO dnf install -y -q $DNF_CORE
+
+  # Tool availability varies between Fedora releases and RHEL-compatible
+  # derivatives. Keep the base reliable and add parity tools independently.
+  for pkg in git-delta hexyl yazi fastfetch eza tealdeer p7zip p7zip-plugins resvg perl-Image-ExifTool glow PackageKit-command-not-found; do
+    if rpm -q "$pkg" >/dev/null 2>&1; then continue; fi
+    if run $SUDO dnf install -y -q "$pkg" 2>/dev/null; then
+      [ "${DRY_RUN:-0}" = 1 ] || tx_dnf_install "$pkg"
+    else
+      echo "  skip: $pkg not available in this Fedora-family release"
+    fi
+  done
+  [ "${DRY_RUN:-0}" = 1 ] || ui_ensure_gum
 else
-  echo "Unsupported OS/distribution: $OS_TYPE (${DISTRO_ID:-unknown}); supported Linux families: Arch and Debian." >&2
+  echo "Unsupported OS/distribution: $OS_TYPE (${DISTRO_ID:-unknown}); supported Linux families: Arch, Debian and Fedora." >&2
   exit 1
 fi
 echo "[01] done"
