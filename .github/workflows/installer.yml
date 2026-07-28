@@ -22,7 +22,7 @@ jobs:
           -e SC1090,SC1091,SC2034
           lib/exec.sh lib/state.sh lib/step.sh lib/telemetry.sh lib/transaction.sh lib/trash.sh
           lib/setup/selection.sh lib/packages/*.sh
-          scripts/install-github-release.sh
+          scripts/install-github-release.sh scripts/trash-tool.sh
       - name: Lint orchestrator and steps
         run: >-
           shellcheck -x --severity=error
