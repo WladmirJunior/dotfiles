@@ -135,6 +135,7 @@ source "$DOTFILES_DIR/lib/ui.sh"
 [ -f "$DOTFILES_DIR/lib/template.sh" ]    && source "$DOTFILES_DIR/lib/template.sh"
 [ -f "$DOTFILES_DIR/lib/plan.sh" ]        && source "$DOTFILES_DIR/lib/plan.sh"
 [ -f "$DOTFILES_DIR/lib/transaction.sh" ] && source "$DOTFILES_DIR/lib/transaction.sh"
+[ -f "$DOTFILES_DIR/lib/telemetry.sh" ]   && source "$DOTFILES_DIR/lib/telemetry.sh"
 [ "$PLAN_MODE" = 1 ] && plan_reset
 
 # Transaction log: track mutations so a failed install rolls back cleanly
@@ -313,6 +314,17 @@ abort_install() {
   exit "$rc"
 }
 
+# Telemetry mode label for this run. A completed base install re-running is a
+# maintenance pass; --check never reaches the step loop but is labeled anyway.
+INSTALL_RUN_MODE="install"
+if [ "$CHECK_ONLY" = 1 ]; then
+  INSTALL_RUN_MODE="check"
+elif [ "$DRY_RUN" = 1 ]; then
+  INSTALL_RUN_MODE="dry-run"
+elif command -v state_is >/dev/null 2>&1 && state_is public.base complete; then
+  INSTALL_RUN_MODE="maintenance"
+fi
+
 STEP_N=0
 OPTIONAL_STEP_FAILURES=""
 while IFS= read -r step <&3; do
@@ -326,8 +338,13 @@ while IFS= read -r step <&3; do
   # STEP_DEPENDENCY_UNAVAILABLE, see lib/step.sh), which are announced and the
   # install moves on. Capture the step's real exit code directly (a `if ! cmd`
   # would mask it as 1).
+  step_started_at="$(date +%s)"
   step_execute "$DOTFILES_DIR/steps/$step"
   step_rc=$?
+  # Best-effort run telemetry: recorded before the abort check so a failing
+  # step still gets its line; never fails the install (see lib/telemetry.sh).
+  command -v telemetry_record_step >/dev/null 2>&1 && telemetry_record_step \
+    "$step" "$step_rc" "$(( $(date +%s) - step_started_at ))" "$INSTALL_RUN_MODE" "$OS_TYPE"
   if [ "$step_rc" -ne 0 ]; then
     step_status=""
     command -v step_status_label >/dev/null 2>&1 \

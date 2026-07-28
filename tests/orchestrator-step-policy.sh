@@ -61,6 +61,22 @@ grep -q 'optional step(s) failed: 20-optfail.sh' "$TMP/optional.out"
   exit 1
 }
 
+# ── Telemetry: one JSONL line per executed step ──────────────────────────────
+TELEM="$TMP/state-optional/dotfiles/runs.jsonl"
+[ -f "$TELEM" ] || { echo "no telemetry log written" >&2; exit 1; }
+[ "$(wc -l < "$TELEM" | tr -d ' ')" -eq 3 ] || {
+  echo "expected 3 telemetry lines (one per executed step)" >&2
+  cat "$TELEM" >&2
+  exit 1
+}
+grep -q '"step":"10-pass.sh","rc":0' "$TELEM"
+grep -q '"step":"20-optfail.sh","rc":1' "$TELEM"
+grep -q '"step":"30-marker.sh","rc":0' "$TELEM"
+grep -q '"timestamp":"' "$TELEM"
+grep -q '"duration_s":' "$TELEM"
+grep -q '"mode":"install"' "$TELEM"
+grep -q '"os":"' "$TELEM"
+
 # ── Not in the table: fail-closed default, abort + no later steps ────────────
 rc=0; run_install default '' || rc=$?
 [ "$rc" -ne 0 ] || {
@@ -75,9 +91,35 @@ if [ -e "$TMP/marker-default" ]; then
   exit 1
 fi
 
+# The aborting failure is still recorded; steps that never ran are not.
+TELEM_DEFAULT="$TMP/state-default/dotfiles/runs.jsonl"
+grep -q '"step":"20-optfail.sh","rc":1' "$TELEM_DEFAULT"
+if grep -q '"step":"30-marker.sh"' "$TELEM_DEFAULT"; then
+  echo "telemetry recorded a step that never ran" >&2
+  exit 1
+fi
+
 # ── Explicitly required behaves like the default ─────────────────────────────
 rc=0; run_install required '20-optfail.sh required' || rc=$?
 [ "$rc" -ne 0 ]
 grep -q 'aborting install' "$TMP/required.out"
+
+# ── Telemetry: a completed base install re-runs in maintenance mode ──────────
+mkdir -p "$TMP/state-maint/dotfiles"
+printf 'public.base=complete\n' > "$TMP/state-maint/dotfiles/setup.state"
+run_install maint '20-optfail.sh optional'
+grep -q '"mode":"maintenance"' "$TMP/state-maint/dotfiles/runs.jsonl"
+
+# ── Telemetry is best-effort: an unwritable log never fails the install ──────
+mkdir -p "$TMP/state-broken/dotfiles/runs.jsonl"   # a DIRECTORY at the log path
+run_install broken '20-optfail.sh optional' || {
+  echo "telemetry append failure aborted the install" >&2
+  cat "$TMP/broken.out" >&2
+  exit 1
+}
+[ -e "$TMP/marker-broken" ] || {
+  echo "steps stopped running after a telemetry append failure" >&2
+  exit 1
+}
 
 echo "Orchestrator step-policy tests passed."
