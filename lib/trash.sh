@@ -7,11 +7,14 @@
 # outside any AI CLI. SETUP_TRASH_DIR overrides the per-run dir outright.
 SETUP_TRASH_ROOT="${SETUP_TRASH_ROOT:-${AGENT_QUARANTINE_DIR:-$HOME/.cli-trash}}"
 
+# setup_trash_dir: resolve (and print) this run's quarantine dir WITHOUT
+# creating it. The dir appears on disk only when something is actually moved
+# into it (setup_trash_mv / setup_trash_manifest); a fully successful install
+# that parked nothing leaves no empty per-run dir behind.
 setup_trash_dir() {
   if [ -z "${SETUP_TRASH_DIR:-}" ]; then
     SETUP_TRASH_DIR="$SETUP_TRASH_ROOT/dotfiles-installer/$(date +%s)-$$-dotfiles"
   fi
-  mkdir -p "$SETUP_TRASH_DIR"
   printf '%s\n' "$SETUP_TRASH_DIR"
 }
 
@@ -32,9 +35,27 @@ setup_trash_destination() {
 
 # setup_trash_manifest ORIGIN DEST: record one quarantine move so a person can
 # map every parked file back to where it came from ("origin -> destination").
+# Call it only for moves that actually happened: a manifest line for an item
+# that never reached the quarantine sends trash-tool restore chasing ghosts.
 setup_trash_manifest() {
   setup_trash_dir >/dev/null
+  mkdir -p "$SETUP_TRASH_DIR" 2>/dev/null || true
   printf '%s -> %s\n' "$1" "$2" >> "$SETUP_TRASH_DIR/MANIFEST" 2>/dev/null || true
+}
+
+# setup_trash_mv SRC DEST [MANIFEST_ORIGIN]: the single quarantine move
+# primitive. Moves SRC to DEST and writes the manifest line next to DEST in
+# the same act, so the manifest can never claim a move that did not happen.
+# MANIFEST_ORIGIN (default SRC) is the path a restore should map the item back
+# to; commit-time backup parking passes the original path, not the temporary
+# backup name. Also used as a recorded undo/cleanup command (see
+# lib/transaction.sh): it is exported and runs in the same shell during
+# rollback/commit, keeping deferred moves and their manifest line together.
+setup_trash_mv() {
+  local src="$1" dest="$2" origin="${3:-$1}"
+  mkdir -p "$(dirname "$dest")" 2>/dev/null
+  mv "$src" "$dest" || return 1
+  printf '%s -> %s\n' "$origin" "$dest" >> "$(dirname "$dest")/MANIFEST" 2>/dev/null || true
 }
 
 trash_path() {
@@ -43,8 +64,7 @@ trash_path() {
   [ -e "$path" ] || [ -L "$path" ] || return 0
   setup_trash_dir >/dev/null
   dest="$(setup_trash_destination "$label")"
-  mv "$path" "$dest"
-  setup_trash_manifest "$path" "$dest"
+  setup_trash_mv "$path" "$dest"
   SETUP_TRASH_LAST="$dest"
 }
 
@@ -76,4 +96,4 @@ setup_trash_prune() {
 
 export SETUP_TRASH_ROOT
 export -f setup_trash_dir setup_trash_destination setup_trash_manifest \
-  trash_path setup_trash_prune 2>/dev/null || true
+  setup_trash_mv trash_path setup_trash_prune 2>/dev/null || true

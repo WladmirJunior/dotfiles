@@ -123,19 +123,22 @@ print(json.dumps({"op":os.environ["OP"],"undo":sys.argv[1:]},ensure_ascii=False)
   fi
 }
 
-# _tx_record_backup OP BACKUP UNDO_ARGV...: record an undo that consumes a
-# temporary backup on rollback and removes that backup only after commit.
+# _tx_record_backup OP BACKUP CLEANUP_DEST ORIGIN UNDO_ARGV...: record an undo
+# that consumes a temporary backup on rollback and parks that backup in
+# quarantine only after commit. The cleanup uses setup_trash_mv so the
+# quarantine manifest line is written at the moment the backup actually lands
+# there, mapped to ORIGIN (the real path a restore should aim at).
 _tx_record_backup() {
-  local op="$1" backup="$2" cleanup_dest="$3"; shift 3
+  local op="$1" backup="$2" cleanup_dest="$3" origin="$4"; shift 4
   if _tx_have_jq; then
     local args_json cleanup_json
     args_json=$(printf '%s\n' "$@" | jq -R . | jq -cs .)
-    cleanup_json=$(printf '%s\n' mv "$backup" "$cleanup_dest" | jq -R . | jq -cs .)
+    cleanup_json=$(printf '%s\n' setup_trash_mv "$backup" "$cleanup_dest" "$origin" | jq -R . | jq -cs .)
     printf '{"op":%s,"undo":%s,"cleanup":%s}\n' \
       "$(printf '%s' "$op" | jq -R .)" "$args_json" "$cleanup_json" >> "$TX_LOG"
   else
-    OP="$op" BACKUP="$backup" CLEANUP_DEST="$cleanup_dest" python3 -c 'import json,os,sys
-print(json.dumps({"op":os.environ["OP"],"undo":sys.argv[1:],"cleanup":["mv",os.environ["BACKUP"],os.environ["CLEANUP_DEST"]]},ensure_ascii=False))' \
+    OP="$op" BACKUP="$backup" CLEANUP_DEST="$cleanup_dest" ORIGIN="$origin" python3 -c 'import json,os,sys
+print(json.dumps({"op":os.environ["OP"],"undo":sys.argv[1:],"cleanup":["setup_trash_mv",os.environ["BACKUP"],os.environ["CLEANUP_DEST"],os.environ["ORIGIN"]]},ensure_ascii=False))' \
       "$@" >> "$TX_LOG"
   fi
 }
@@ -182,16 +185,17 @@ tx_brew_self() {
   setup_trash_dir >/dev/null
   _tx_seq
   trash_dest="$(setup_trash_destination "homebrew-prefix-$TX_SEQ")"
-  setup_trash_manifest "$prefix" "$trash_dest"
-  _tx_record "brew_self:$prefix" mv "$prefix" "$trash_dest"
+  # The undo (setup_trash_mv) both moves AND writes the manifest line, so the
+  # manifest only ever lists moves that really happened (rollback), never a
+  # successful install whose items stayed in place.
+  _tx_record "brew_self:$prefix" setup_trash_mv "$prefix" "$trash_dest"
 }
 tx_git_clone() {  # url dest
   local trash_dest
   setup_trash_dir >/dev/null
   _tx_seq
   trash_dest="$(setup_trash_destination "clone-$(basename "$2")-$TX_SEQ")"
-  setup_trash_manifest "$2" "$trash_dest"
-  _tx_record "git_clone:$2" mv "$2" "$trash_dest"
+  _tx_record "git_clone:$2" setup_trash_mv "$2" "$trash_dest"
 }
 tx_created_path() {  # path [label]
   local path="$1" label trash_dest
@@ -200,8 +204,7 @@ tx_created_path() {  # path [label]
   setup_trash_dir >/dev/null
   _tx_seq
   trash_dest="$(setup_trash_destination "$label-$TX_SEQ")"
-  setup_trash_manifest "$path" "$trash_dest"
-  _tx_record "created:$path" mv "$path" "$trash_dest"
+  _tx_record "created:$path" setup_trash_mv "$path" "$trash_dest"
 }
 tx_mkdir() {  # dir — only record if we actually create it
   local d="$1"
@@ -218,16 +221,18 @@ tx_symlink() {  # src dst
     setup_trash_dir >/dev/null
     _tx_seq
     trash_dest="$(setup_trash_destination "replaced-$(basename "$dst")-$TX_SEQ")"
-    mv "$dst" "$trash_dest"
-    setup_trash_manifest "$dst" "$trash_dest"
+    # This move happens NOW (the prior file is parked before the link lands),
+    # so setup_trash_mv writes its manifest line at the same moment.
+    setup_trash_mv "$dst" "$trash_dest"
     _tx_record "symlink:$dst" mv "$trash_dest" "$dst"
   else
     local new_link_trash
     setup_trash_dir >/dev/null
     _tx_seq
     new_link_trash="$(setup_trash_destination "link-$(basename "$dst")-$TX_SEQ")"
-    setup_trash_manifest "$dst" "$new_link_trash"
-    _tx_record "symlink:$dst" mv "$dst" "$new_link_trash"
+    # New link: nothing moves unless we roll back; the deferred setup_trash_mv
+    # writes the manifest line only if that rollback move really runs.
+    _tx_record "symlink:$dst" setup_trash_mv "$dst" "$new_link_trash"
   fi
   ln -sfn "$src" "$dst"
 }
@@ -245,14 +250,15 @@ tx_run() {
 }
 
 # tx_backup_path OP PATH BACKUP: move PATH aside while retaining enough state
-# for rollback. After commit the prior value is kept in recoverable trash.
+# for rollback. After commit the prior value is kept in recoverable trash; on
+# rollback it returns to PATH and never reaches the trash, so the manifest
+# line is written by the commit-time setup_trash_mv, not at record time.
 tx_backup_path() {
   local op="$1" path="$2" backup="$3" cleanup_dest
   setup_trash_dir >/dev/null
   _tx_seq
   cleanup_dest="$(setup_trash_destination "backup-$(basename "$path")-$TX_SEQ")"
-  setup_trash_manifest "$path" "$cleanup_dest"
-  _tx_record_backup "$op" "$backup" "$cleanup_dest" mv "$backup" "$path"
+  _tx_record_backup "$op" "$backup" "$cleanup_dest" "$path" mv "$backup" "$path"
   mv "$path" "$backup"
 }
 
@@ -302,26 +308,35 @@ for t in [str(d.get("op") or "?")] + [str(u) for u in (d.get("undo") or [])]:
   fi
 }
 
+# _tx_exec_cleanup LINE: run the entry's .cleanup argv, if any. Decoded and
+# executed IN THIS SHELL (both branches) because a cleanup can name an
+# exported shell function (setup_trash_mv), which a python subprocess could
+# never exec.
 _tx_exec_cleanup() {
   local line="$1"
   [ -z "$line" ] && return 0
+  local argv=() b64
   if _tx_have_jq; then
-    local argv=() b64
     while IFS= read -r b64; do
       [ -z "$b64" ] && continue
       argv+=("$(printf '%s' "$b64" | base64 -d 2>/dev/null)")
     done < <(printf '%s' "$line" | jq -r '.cleanup[]? | @base64' 2>/dev/null)
-    [ "${#argv[@]}" -eq 0 ] || "${argv[@]}" >/dev/null 2>&1 \
-      || echo "tx: commit cleanup failed: ${argv[*]}" >&2
   else
-    LINE="$line" python3 -c 'import json,os,subprocess
+    # python fallback via `-c` (no heredoc; see the _tx_exec_undo note on
+    # export -f corruption). Emits base64 tokens for the shell to execute.
+    while IFS= read -r b64; do
+      [ -z "$b64" ] && continue
+      argv+=("$(printf '%s' "$b64" | base64 -d 2>/dev/null)")
+    done < <(LINE="$line" python3 -c 'import base64,json,os
 try:
-    cleanup=json.loads(os.environ["LINE"]).get("cleanup") or []
+    d=json.loads(os.environ["LINE"])
 except Exception:
-    cleanup=[]
-if cleanup:
-    subprocess.run(cleanup,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)' || true
+    raise SystemExit(0)
+for t in [str(u) for u in (d.get("cleanup") or [])]:
+    print(base64.b64encode(t.encode()).decode())' 2>/dev/null)
   fi
+  [ "${#argv[@]}" -eq 0 ] || "${argv[@]}" >/dev/null 2>&1 \
+    || echo "tx: commit cleanup failed: ${argv[*]}" >&2
 }
 
 # tx_rollback: replay every recorded undo in reverse order. A failing undo is

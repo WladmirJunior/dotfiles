@@ -91,28 +91,109 @@ tx_init > "$TMP/stale.out"
 grep -q 'reclaiming stale lock' "$TMP/stale.out"
 grep -qx "$$" "$TX_LOG.lock/pid"
 
-# ── Quarantine: manifest records origin -> destination ────────────────────────
+# ── Quarantine: manifest records origin -> destination at the real move ───────
 printf 'junk\n' > "$TMP/junk-file"
 trash_path "$TMP/junk-file"
 grep -q "^$TMP/junk-file -> $SETUP_TRASH_DIR/junk-file" "$SETUP_TRASH_DIR/MANIFEST"
 
-# ── Quarantine: every recording helper writes its manifest line at record time ─
-tx_created_path "$TMP/mf-created"
-grep -q "^$TMP/mf-created -> " "$SETUP_TRASH_DIR/MANIFEST"
+# tx_symlink over an existing file parks it NOW: manifest line at record time.
+printf 'old\n' > "$TMP/mf-replaced"
+tx_symlink "$TMP/mf-target" "$TMP/mf-replaced"
+grep -q "^$TMP/mf-replaced -> " "$SETUP_TRASH_DIR/MANIFEST"
 
-tx_git_clone "https://example.invalid/repo.git" "$TMP/mf-clone"
-grep -q "^$TMP/mf-clone -> " "$SETUP_TRASH_DIR/MANIFEST"
+# ── Deferred recorders: no dir, no manifest line until the move really runs ───
+# A successful install (commit, no rollback) must leave no ghost entries that
+# point trash-tool at items which never reached the quarantine.
+(
+  SETUP_TRASH_DIR="$TMP/trash-commit"
+  TX_LOG="$TMP/tx-commit.jsonl"
+  TX_LOCK_DIR="$TX_LOG.lock"
+  tx_init
+  tx_created_path "$TMP/cm-created"
+  printf 'made\n' > "$TMP/cm-created"
+  tx_git_clone "https://example.invalid/repo.git" "$TMP/cm-clone"
+  mkdir -p "$TMP/cm-clone"
+  HOMEBREW_PREFIX="$TMP/cm-brew-prefix" tx_brew_self
+  tx_symlink "$TMP/cm-target" "$TMP/cm-link"   # dst absent -> new-link branch
+  [ ! -e "$SETUP_TRASH_DIR" ]   # recording alone creates nothing on disk
+  tx_commit >/dev/null
+  [ ! -e "$SETUP_TRASH_DIR" ]   # committed install: no quarantine dir at all
+  [ -f "$TMP/cm-created" ]      # ...and the installed items stayed in place
+  [ -L "$TMP/cm-link" ]
+)
 
-HOMEBREW_PREFIX="$TMP/mf-brew-prefix" tx_brew_self
-grep -q "^$TMP/mf-brew-prefix -> " "$SETUP_TRASH_DIR/MANIFEST"
+# ── Deferred recorders on rollback: items land in trash WITH manifest lines ───
+(
+  SETUP_TRASH_DIR="$TMP/trash-rb"
+  TX_LOG="$TMP/tx-rb.jsonl"
+  TX_LOCK_DIR="$TX_LOG.lock"
+  tx_init
+  tx_created_path "$TMP/rb-created"
+  printf 'made\n' > "$TMP/rb-created"
+  tx_symlink "$TMP/rb-target" "$TMP/rb-link"
+  tx_rollback >/dev/null
+  [ ! -e "$TMP/rb-created" ]    # undone: moved to quarantine
+  [ ! -L "$TMP/rb-link" ]
+  grep -q "^$TMP/rb-created -> " "$SETUP_TRASH_DIR/MANIFEST"
+  grep -q "^$TMP/rb-link -> " "$SETUP_TRASH_DIR/MANIFEST"
+)
 
-printf 'old\n' > "$TMP/mf-backed"
-tx_backup_path "test:backup" "$TMP/mf-backed" "$TMP/mf-backed.bak"
-grep -q "^$TMP/mf-backed -> " "$SETUP_TRASH_DIR/MANIFEST"
-[ -f "$TMP/mf-backed.bak" ]
+# ── tx_backup_path: backup parked (manifest mapped to the ORIGINAL path) only
+#    at commit; a rollback restores it and writes no manifest line ────────────
+(
+  SETUP_TRASH_DIR="$TMP/trash-bk"
+  TX_LOG="$TMP/tx-bk.jsonl"
+  TX_LOCK_DIR="$TX_LOG.lock"
+  tx_init
+  printf 'old\n' > "$TMP/bk-file"
+  tx_backup_path "test:backup" "$TMP/bk-file" "$TMP/bk-file.bak"
+  [ -f "$TMP/bk-file.bak" ]
+  [ ! -e "$SETUP_TRASH_DIR" ]   # nothing parked yet
+  tx_commit >/dev/null
+  [ ! -e "$TMP/bk-file.bak" ]   # backup left $HOME for the quarantine
+  grep -q "^$TMP/bk-file -> $SETUP_TRASH_DIR/backup-bk-file-1$" "$SETUP_TRASH_DIR/MANIFEST"
+  grep -q '^old$' "$SETUP_TRASH_DIR/backup-bk-file-1"
+)
+(
+  SETUP_TRASH_DIR="$TMP/trash-bk-rb"
+  TX_LOG="$TMP/tx-bk-rb.jsonl"
+  TX_LOCK_DIR="$TX_LOG.lock"
+  tx_init
+  printf 'old\n' > "$TMP/bk-rb-file"
+  tx_backup_path "test:backup" "$TMP/bk-rb-file" "$TMP/bk-rb-file.bak"
+  tx_rollback >/dev/null
+  grep -q '^old$' "$TMP/bk-rb-file"   # restored in place
+  [ ! -e "$SETUP_TRASH_DIR" ]         # nothing went to quarantine, no manifest
+)
 
-tx_symlink "$TMP/mf-target" "$TMP/mf-link"   # dst absent -> new-link branch
-grep -q "^$TMP/mf-link -> " "$SETUP_TRASH_DIR/MANIFEST"
+# ── python fallback (no jq): deferred undo and commit cleanup still run the
+#    exported setup_trash_mv in-shell (a subprocess could not exec a function) ─
+if command -v python3 >/dev/null 2>&1; then
+  (
+    _tx_have_jq() { return 1; }
+    SETUP_TRASH_DIR="$TMP/trash-nojq"
+    TX_LOG="$TMP/tx-nojq.jsonl"
+    TX_LOCK_DIR="$TX_LOG.lock"
+    tx_init
+    printf 'old\n' > "$TMP/nj-file"
+    tx_backup_path "test:backup" "$TMP/nj-file" "$TMP/nj-file.bak"
+    tx_commit >/dev/null
+    [ ! -e "$TMP/nj-file.bak" ]
+    grep -q "^$TMP/nj-file -> " "$SETUP_TRASH_DIR/MANIFEST"
+  )
+  (
+    _tx_have_jq() { return 1; }
+    SETUP_TRASH_DIR="$TMP/trash-nojq-rb"
+    TX_LOG="$TMP/tx-nojq-rb.jsonl"
+    TX_LOCK_DIR="$TX_LOG.lock"
+    tx_init
+    tx_created_path "$TMP/njr-created"
+    printf 'made\n' > "$TMP/njr-created"
+    tx_rollback >/dev/null
+    [ ! -e "$TMP/njr-created" ]
+    grep -q "^$TMP/njr-created -> " "$SETUP_TRASH_DIR/MANIFEST"
+  )
+fi
 
 # ── Quarantine: tx_commit prunes only expired per-run dirs ────────────────────
 old_epoch=$(( $(date +%s) - 100 * 86400 ))
