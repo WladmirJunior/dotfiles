@@ -197,7 +197,7 @@ render_dir() {
 
   local f rel dst
   while IFS= read -r f; do
-    rel="${f#$src_dir/}"
+    rel="${f#"$src_dir"/}"
     if [[ "$rel" == *.tmpl ]]; then
       dst="$dst_dir/${rel%.tmpl}"
       render "$f" "$dst"
