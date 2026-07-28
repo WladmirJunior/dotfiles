@@ -14,6 +14,9 @@
 #   --plan, -p      same as --dry-run but show a categorized summary at the end
 #                   (create/update/install/skip counts + per-item list)
 #   --check         run only the post-install verification (no steps)
+#   --status        read-only drift report: catalog vs installed packages for
+#                   this OS (no lock, no transaction, no TTY needed);
+#                   exit 0 = in sync, 1 = missing packages
 set -uo pipefail
 
 REPO_URL="https://github.com/WladmirJunior/dotfiles.git"
@@ -22,12 +25,13 @@ REPO_REF="${DOTFILES_REF:-main}"        # branch/tag/sha to fetch (override via 
 CLONE_DIR="$HOME/.dotfiles"
 
 # Parse flags (any order) and keep the first non-flag arg as the profile.
-DRY_RUN=0; CHECK_ONLY=0; PLAN_MODE=0; PROFILE_ARG=""
+DRY_RUN=0; CHECK_ONLY=0; PLAN_MODE=0; STATUS_ONLY=0; PROFILE_ARG=""
 for arg in "$@"; do
   case "$arg" in
     --dry-run|-n) DRY_RUN=1 ;;
     --plan|-p)    DRY_RUN=1; PLAN_MODE=1 ;;
     --check)      CHECK_ONLY=1 ;;
+    --status)     STATUS_ONLY=1 ;;
     -*)           echo "Unknown flag: $arg" >&2; exit 2 ;;
     *)            [ -z "$PROFILE_ARG" ] && PROFILE_ARG="$arg" ;;
   esac
@@ -67,9 +71,10 @@ SELF_DIR="$( cd "$( dirname "${BASH_SOURCE[0]:-/dev/null}" )" 2>/dev/null && pwd
 if [ -n "$SELF_DIR" ] && [ -d "$SELF_DIR/steps" ] && [ -d "$SELF_DIR/profiles" ]; then
   # ~/.dotfiles is the canonical location even when the user initially cloned
   # the repository elsewhere (for example ~/dev/dotfiles). Move the whole clone
-  # before sourcing any repo files, then restart from its stable path. Preview
-  # and verification modes remain read-only and use the clone in place.
-  if [ "$SELF_DIR" != "$CLONE_DIR" ] && [ "$DRY_RUN" != 1 ] && [ "$CHECK_ONLY" != 1 ]; then
+  # before sourcing any repo files, then restart from its stable path. Preview,
+  # verification and status modes remain read-only and use the clone in place.
+  if [ "$SELF_DIR" != "$CLONE_DIR" ] && [ "$DRY_RUN" != 1 ] && [ "$CHECK_ONLY" != 1 ] \
+    && [ "$STATUS_ONLY" != 1 ]; then
     if [ -e "$CLONE_DIR" ]; then
       echo "ERROR: cannot move dotfiles to $CLONE_DIR because that path already exists." >&2
       echo "Move or remove it, then re-run $SELF_DIR/install.sh." >&2
@@ -139,13 +144,14 @@ source "$DOTFILES_DIR/lib/ui.sh"
 [ "$PLAN_MODE" = 1 ] && plan_reset
 
 # Transaction log: track mutations so a failed install rolls back cleanly
-# instead of leaving the machine half-configured. Disabled in dry-run/plan
-# and in --check (verification-only: no lock, no journal handling) and when
+# instead of leaving the machine half-configured. Disabled in dry-run/plan,
+# in --check and --status (read-only: no lock, no journal handling) and when
 # the helper isn't present. tx_init also takes the single-install lock: rc 2
 # means another install is running, so this one must not proceed at all (two
 # concurrent runs would corrupt the journal).
 TX_ENABLED=0
-if [ "$DRY_RUN" != 1 ] && [ "$CHECK_ONLY" != 1 ] && command -v tx_init >/dev/null 2>&1; then
+if [ "$DRY_RUN" != 1 ] && [ "$CHECK_ONLY" != 1 ] && [ "$STATUS_ONLY" != 1 ] \
+  && command -v tx_init >/dev/null 2>&1; then
   tx_init
   tx_rc=$?
   if [ "$tx_rc" -eq 0 ]; then
@@ -185,6 +191,72 @@ if [ "$CHECK_ONLY" = 1 ]; then
   verify_install; exit $?
 fi
 
+# install_status: headless drift report for --status. For the current OS's
+# package manager, compare each catalog scope against what is actually
+# installed (via the lib/packages adapters; brew uses brew_plan_formulae).
+# Read-only by design: no lock, no transaction, no steps, plain output that
+# works without a TTY. Exit: 0 = in sync, 1 = drift, 2 = cannot report.
+install_status() {
+  local manager="${PACKAGE_MANAGER:-}" query_cmd
+  if [ -z "$manager" ]; then
+    echo "status: unsupported OS/distribution ($OS_TYPE ${DISTRO_ID:-unknown}); no package manager detected" >&2
+    return 2
+  fi
+  source "$DOTFILES_DIR/lib/packages/catalog.sh" || return 2
+  [ -f "$DOTFILES_DIR/lib/packages/$manager.sh" ] \
+    && source "$DOTFILES_DIR/lib/packages/$manager.sh"
+  # Without the manager's query binary every package would read as "missing";
+  # refuse to report drift that is really an unbootstrapped machine.
+  case "$manager" in
+    brew) query_cmd=brew ;;
+    apt) query_cmd=dpkg-query ;;
+    pacman) query_cmd=pacman ;;
+    dnf) query_cmd=rpm ;;
+    *) query_cmd="$manager" ;;
+  esac
+  command -v "$query_cmd" >/dev/null 2>&1 || {
+    echo "status: $query_cmd not found; cannot query installed packages (run the installer first)" >&2
+    return 2
+  }
+  echo "status: manager=$manager os=$OS_TYPE${DISTRO_ID:+ distro=$DISTRO_ID}"
+  # nvim-optional is an interactive opt-in set; reporting it as drift would be
+  # noise. Scopes with no packages for this manager are skipped silently.
+  local drift=0 scope pkgs pkg missing total missing_count
+  for scope in core best-effort; do
+    pkgs="$(package_catalog "$scope" "$manager")" || return 2
+    [ -n "$pkgs" ] || continue
+    missing=""
+    if [ "$manager" = brew ] && command -v brew_plan_formulae >/dev/null 2>&1; then
+      # shellcheck disable=SC2086 # catalog identifiers are word-split on purpose.
+      brew_plan_formulae $pkgs
+      missing="$BREW_MISSING"
+      [ -n "$BREW_UPGRADE" ] && echo "$scope outdated: $BREW_UPGRADE"
+    else
+      for pkg in $pkgs; do
+        case "$manager" in
+          apt) apt_package_installed "$pkg" ;;
+          pacman) pacman_package_installed "$pkg" ;;
+          dnf) dnf_package_installed "$pkg" ;;
+          *) false ;;
+        esac || missing="${missing:+$missing }$pkg"
+      done
+    fi
+    total="$(printf '%s\n' "$pkgs" | wc -w | tr -d ' ')"
+    missing_count=0
+    [ -n "$missing" ] && missing_count="$(printf '%s\n' "$missing" | wc -w | tr -d ' ')"
+    if [ -n "$missing" ]; then
+      drift=1
+      echo "$scope missing: $missing"
+    fi
+    if [ "$((total - missing_count))" -eq 1 ]; then
+      echo "$scope ok: 1 package"
+    else
+      echo "$scope ok: $((total - missing_count)) packages"
+    fi
+  done
+  return "$drift"
+}
+
 # Announce dry-run / plan mode up front so the user knows nothing will be changed.
 if [ "$PLAN_MODE" = 1 ]; then
   info "PLAN: capturing planned changes; nothing will be executed."
@@ -204,6 +276,12 @@ brew_env() {
   done
 }
 brew_env
+
+# --status: drift report only. Placed after brew_env so a Homebrew that is not
+# yet on this shell's PATH is still found; exits before any prompt or UI.
+if [ "$STATUS_ONLY" = 1 ]; then
+  install_status; exit $?
+fi
 
 # Fetch the gum fork before the first prompt/banner so the UI renders richly even
 # on a clean machine. Single source of truth for the gum binary lives in lib/ui.sh.
