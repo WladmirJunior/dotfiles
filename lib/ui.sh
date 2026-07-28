@@ -66,20 +66,61 @@ ui_gum_asset() {
   esac
 }
 
-# ui_ensure_gum: fetch the fork binary once for this platform. Best-effort — a
+# ui_gum_sha256 ASSET: pinned SHA-256 for each release asset of UI_GUM_TAG,
+# taken from the digests GitHub publishes for the release. A downloaded binary
+# is executed only after it matches; on mismatch the UI falls back to stock gum
+# or plain printf. UI_GUM_SHA256 overrides the pin (tests / local fork builds).
+ui_gum_sha256() {
+  if [ -n "${UI_GUM_SHA256:-}" ]; then echo "$UI_GUM_SHA256"; return 0; fi
+  case "$1" in
+    gum-darwin-arm64) echo "65e66317c0480e408ccc27b3fedd87554effa001485d10fa3bf1ed59d0257cc3" ;;
+    gum-linux-amd64)  echo "4121a34da1c87fd20d58a60ad7b95953e06c7c409555903ab10aee1db5bd22a6" ;;
+    gum-linux-arm64)  echo "80fc481a0b8f4f9d6d8cf03d148fd817b80b511d76c5cf25b89b70e31764effa" ;;
+    *) echo "" ;;
+  esac
+}
+
+# ui_sha256_file FILE: portable SHA-256 (coreutils sha256sum on Linux, shasum
+# on stock macOS). Fails when neither tool exists so callers fail closed.
+ui_sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  else return 1; fi
+}
+
+# ui_ensure_gum: fetch the fork binary once for this platform. Best-effort: a
 # failure just means the helpers use whatever `gum` is on PATH (no fork extras).
+# The download is verified against the pinned per-asset SHA-256 before it is
+# made executable; an unverifiable binary is discarded, never run. In dry-run
+# nothing is downloaded: the fetch is announced and the UI uses whatever gum is
+# already present (or the plain-printf fallback).
 ui_ensure_gum() {
   [ "$UI_GUM_USE_FORK" = 1 ] || return 0
   [ -x "$UI_GUM_BIN" ] && return 0
+  if [ "${DRY_RUN:-0}" = 1 ]; then
+    echo "[dry-run] fetch gum fork $UI_GUM_TAG to $UI_GUM_BIN (checksum-verified)"
+    return 0
+  fi
   command -v curl >/dev/null 2>&1 || return 0
   mkdir -p "$UI_GUM_DIR" 2>/dev/null || return 0
   local asset; asset="$(ui_gum_asset)"; [ -n "$asset" ] || return 0
+  local expected_sha; expected_sha="$(ui_gum_sha256 "$asset")"
+  [ -n "$expected_sha" ] || return 0
   local url="https://github.com/$UI_GUM_REPO/releases/download/$UI_GUM_TAG/$asset"
-  if curl -fsSL "$url" -o "$UI_GUM_BIN" 2>/dev/null; then
-    chmod +x "$UI_GUM_BIN" 2>/dev/null || true
-  else
-    rm -f "$UI_GUM_BIN" 2>/dev/null || true
+  local download="$UI_GUM_BIN.download.$$"
+  if ! curl -fsSL "$url" -o "$download" 2>/dev/null; then
+    rm -f "$download" 2>/dev/null || true
+    return 0
   fi
+  local actual_sha
+  if ! actual_sha="$(ui_sha256_file "$download" 2>/dev/null)" \
+    || [ "$actual_sha" != "$expected_sha" ]; then
+    echo "gum fork: SHA-256 mismatch for $asset; discarding download, using fallback UI" >&2
+    rm -f "$download" 2>/dev/null || true
+    return 0
+  fi
+  chmod +x "$download" 2>/dev/null || { rm -f "$download" 2>/dev/null || true; return 0; }
+  mv "$download" "$UI_GUM_BIN" 2>/dev/null || rm -f "$download" 2>/dev/null || true
 }
 
 # ui_bootstrap_gum: make gum available before the first UI prompt. Sourced before
