@@ -23,5 +23,19 @@ jobs:
           lib/exec.sh lib/state.sh lib/step.sh lib/transaction.sh lib/trash.sh
           lib/setup/selection.sh lib/packages/*.sh
           scripts/install-github-release.sh
+      - name: Lint orchestrator and steps
+        run: >-
+          shellcheck -x --severity=error
+          -e SC1090,SC1091,SC2034
+          install.sh steps/*.sh
       - name: Run installer tests
         run: bash tests/run.sh
+
+  tests-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install a modern bash (macOS ships 3.2)
+        run: brew list bash >/dev/null 2>&1 || brew install bash
+      - name: Run installer tests
+        run: '"$(brew --prefix)/bin/bash" tests/run.sh'

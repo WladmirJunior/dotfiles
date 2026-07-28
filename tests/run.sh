@@ -3,7 +3,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-bash -n \
+# Run every check with the same interpreter that runs this file ($BASH), not
+# whatever `bash` is first on PATH: on macOS runners that guarantees the
+# brew-installed bash is used consistently instead of the 3.2 /bin/bash.
+"$BASH" -n \
   "$ROOT/install.sh" \
   "$ROOT/uninstall.sh" \
   "$ROOT"/lib/*.sh \
@@ -15,5 +18,5 @@ bash -n \
 
 for test_file in "$ROOT"/tests/*.sh; do
   [ "$(basename "$test_file")" = run.sh ] && continue
-  bash "$test_file"
+  "$BASH" "$test_file"
 done

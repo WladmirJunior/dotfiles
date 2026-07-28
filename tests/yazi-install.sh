@@ -6,8 +6,14 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin"
 
+# Portable SHA-256: GNU sha256sum on Linux, shasum on stock macOS.
+sha256_hex() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"
+  else shasum -a 256 "$@"; fi
+}
+
 printf 'yazi test package' > "$TMP/reference.deb"
-TEST_SHA="$(sha256sum "$TMP/reference.deb" | awk '{print $1}')"
+TEST_SHA="$(sha256_hex "$TMP/reference.deb" | awk '{print $1}')"
 export TEST_SHA
 
 cat > "$TMP/bin/uname" <<'SH'
@@ -35,7 +41,11 @@ SH
 
 cat > "$TMP/bin/sha256sum" <<'SH'
 #!/bin/sh
-/usr/bin/sha256sum "$1"
+# Delegate to the system digest tool by absolute path (a bare `sha256sum`
+# would recurse into this stub); shasum covers stock macOS.
+if [ -x /usr/bin/sha256sum ]; then exec /usr/bin/sha256sum "$1"; fi
+if [ -x /bin/sha256sum ]; then exec /bin/sha256sum "$1"; fi
+exec /usr/bin/shasum -a 256 "$1"
 SH
 
 cat > "$TMP/bin/apt-get" <<'SH'

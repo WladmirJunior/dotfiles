@@ -60,7 +60,12 @@ fi
 # 3) Checksum match (pin overridden to this body's digest): binary installed.
 XDG_DATA_HOME="$TMP/data-good"
 CURL_BODY="pretend gum binary"
-expected="$(printf '%s' "$CURL_BODY" | sha256sum | awk '{print $1}')"
+# Portable digest: GNU sha256sum on Linux, shasum on stock macOS.
+if command -v sha256sum >/dev/null 2>&1; then
+  expected="$(printf '%s' "$CURL_BODY" | sha256sum | awk '{print $1}')"
+else
+  expected="$(printf '%s' "$CURL_BODY" | shasum -a 256 | awk '{print $1}')"
+fi
 UI_GUM_SHA256="$expected" DRY_RUN=0 run_ensure_gum
 [ -x "$TMP/data-good/gum-fork/gum" ]
 
