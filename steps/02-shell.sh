@@ -16,20 +16,23 @@ command -v run >/dev/null 2>&1 || run() { [ "${DRY_RUN:-0}" = 1 ] && { echo "[dr
 
 echo "[02] Shell (fzf, zsh plugins)..."
 
-# fzf's installers create ~/.fzf.zsh (and may append a source line to ~/.zshrc).
-# Record ~/.fzf.zsh as a created path before any path that creates it, so a
-# later-step failure moves the generated file to recoverable trash. tx_created_path
-# only records when the file doesn't already exist; skip recording in dry-run.
+# fzf's installers create ~/.fzf.zsh. Record it as a created path before any
+# path that creates it, so a later-step failure moves the generated file to
+# recoverable trash. tx_created_path only records when the file doesn't already
+# exist; skip recording in dry-run.
+# --no-update-rc instead of --all: --all also appends a source line to ~/.zshrc
+# OUTSIDE the transaction journal (rollback would leave it behind). The repo's
+# zshrc already sources ~/.fzf.zsh, so the rc edit is redundant anyway.
 if [ "$OS_TYPE" = "Darwin" ]; then
   [ "${DRY_RUN:-0}" != 1 ] && tx_created_path "$HOME/.fzf.zsh"
-  run "$(brew --prefix)/opt/fzf/install" --all --no-bash --no-fish
+  run "$(brew --prefix)/opt/fzf/install" --key-bindings --completion --no-update-rc --no-bash --no-fish
 else
   # `|| true`: no fzf installer found is a valid outcome (the elif/else below
   # handle it); under pipefail the empty grep would otherwise abort the step.
   FZF_INSTALL=$(find /usr/share -name install.sh 2>/dev/null | grep fzf | head -n 1 || true)
   if [ -n "$FZF_INSTALL" ]; then
     [ "${DRY_RUN:-0}" != 1 ] && tx_created_path "$HOME/.fzf.zsh"
-    run bash "$FZF_INSTALL" --all --no-bash --no-fish
+    run bash "$FZF_INSTALL" --key-bindings --completion --no-update-rc --no-bash --no-fish
   elif fzf --zsh >/dev/null 2>&1; then
     if [ "${DRY_RUN:-0}" = 1 ]; then echo "[dry-run] fzf --zsh > ~/.fzf.zsh"; else
       tx_created_path "$HOME/.fzf.zsh"

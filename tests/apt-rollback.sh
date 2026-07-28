@@ -25,7 +25,7 @@ case "$last_arg" in
 esac
 SH
 
-for command_name in yazi fastfetch; do
+for command_name in yazi fastfetch fdfind batcat; do
   cat > "$TMP/bin/$command_name" <<'SH'
 #!/bin/sh
 exit 0
@@ -38,6 +38,7 @@ PATH="$TMP/bin:/usr/bin:/bin" \
 APT_CALLS="$TMP/apt.calls" \
 DOTFILES_DIR="$ROOT" \
 TX_LOG="$TMP/tx.jsonl" \
+SETUP_TRASH_ROOT="$TMP/trash-root" \
 OS_TYPE=Linux \
 PACKAGE_MANAGER=apt \
   bash "$ROOT/steps/01-packages.sh"
@@ -48,6 +49,13 @@ if grep -q 'apt_install:zsh\|apt_install:eza' "$TMP/tx.jsonl"; then
   echo "rollback recorded a pre-existing apt package" >&2
   exit 1
 fi
+
+# Debian fd/bat name shims go through the journal (tx_symlink), not a raw
+# ln -sf that a rollback would leave behind.
+[ -L "$TMP/home/.local/bin/fd" ]
+[ -L "$TMP/home/.local/bin/bat" ]
+grep -q "symlink:$TMP/home/.local/bin/fd" "$TMP/tx.jsonl"
+grep -q "symlink:$TMP/home/.local/bin/bat" "$TMP/tx.jsonl"
 
 # ── apt-get update failure: fatal on first install, tolerated on maintenance ──
 cat > "$TMP/bin/apt-get" <<'SH'

@@ -141,20 +141,33 @@ source "$DOTFILES_DIR/lib/ui.sh"
 [ -f "$DOTFILES_DIR/lib/telemetry.sh" ]   && source "$DOTFILES_DIR/lib/telemetry.sh"
 
 # Transaction log: track mutations so a failed install rolls back cleanly
-# instead of leaving the machine half-configured. Disabled in dry-run/plan,
-# in --check and --status (read-only: no lock, no journal handling) and when
-# the helper isn't present. tx_init also takes the single-install lock: rc 2
-# means another install is running, so this one must not proceed at all (two
-# concurrent runs would corrupt the journal).
+# instead of leaving the machine half-configured. Disabled in dry-run/plan and
+# in --check and --status (read-only: no lock, no journal handling). tx_init
+# also takes the single-install lock: rc 2 means another install is running,
+# so this one must not proceed at all (two concurrent runs would corrupt the
+# journal). Any other tx_init failure (unwritable journal, unpreservable
+# abandoned journal) is fail-closed: continuing would silently run without
+# rollback. DOTFILES_NO_TX=1 is the explicit opt-out for that protection.
 TX_ENABLED=0
-if [ "$DRY_RUN" != 1 ] && [ "$CHECK_ONLY" != 1 ] && [ "$STATUS_ONLY" != 1 ] \
-  && command -v tx_init >/dev/null 2>&1; then
-  tx_init
-  tx_rc=$?
-  if [ "$tx_rc" -eq 0 ]; then
-    TX_ENABLED=1
-  elif [ "$tx_rc" -eq 2 ]; then
-    echo "ERROR: another dotfiles install is already running. Finish or stop it, then re-run." >&2
+if [ "$DRY_RUN" != 1 ] && [ "$CHECK_ONLY" != 1 ] && [ "$STATUS_ONLY" != 1 ]; then
+  if [ "${DOTFILES_NO_TX:-0}" = 1 ]; then
+    echo "DOTFILES_NO_TX=1: proceeding WITHOUT rollback protection" >&2
+  elif command -v tx_init >/dev/null 2>&1; then
+    tx_init
+    tx_rc=$?
+    if [ "$tx_rc" -eq 0 ]; then
+      TX_ENABLED=1
+    elif [ "$tx_rc" -eq 2 ]; then
+      echo "ERROR: another dotfiles install is already running. Finish or stop it, then re-run." >&2
+      exit 1
+    else
+      echo "ERROR: cannot start the transaction journal (rc=$tx_rc); rollback would be silently disabled." >&2
+      echo "Fix the journal path (${TX_LOG:-~/.dotfiles-install.jsonl}) or re-run with DOTFILES_NO_TX=1 to proceed without rollback." >&2
+      exit 1
+    fi
+  else
+    echo "ERROR: transaction library unavailable; rollback would be silently disabled." >&2
+    echo "Restore lib/transaction.sh or re-run with DOTFILES_NO_TX=1 to proceed without rollback." >&2
     exit 1
   fi
 fi

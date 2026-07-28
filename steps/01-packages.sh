@@ -18,7 +18,7 @@ source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
 [ -f "${DOTFILES_DIR:-.}/lib/packages/apt.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/apt.sh" 2>/dev/null || true
 [ -f "${DOTFILES_DIR:-.}/lib/packages/pacman.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/pacman.sh" 2>/dev/null || true
 [ -f "${DOTFILES_DIR:-.}/lib/packages/dnf.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/dnf.sh" 2>/dev/null || true
-for fn in tx_brew_install tx_brew_cask tx_apt_install tx_pacman_install tx_dnf_install tx_brew_self tx_run; do
+for fn in tx_brew_install tx_brew_cask tx_apt_install tx_pacman_install tx_dnf_install tx_brew_self tx_run tx_mkdir tx_symlink; do
   command -v "$fn" >/dev/null 2>&1 || eval "$fn() { :; }"
 done
 command -v run >/dev/null 2>&1 || run() { [ "${DRY_RUN:-0}" = 1 ] && { echo "[dry-run] $*"; return 0; }; "$@"; }
@@ -159,9 +159,17 @@ elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "apt" ]; then
   APT_OPTIONAL="$(package_catalog best-effort apt)"
   # shellcheck disable=SC2086
   apt_install_optional $APT_OPTIONAL
-  run mkdir -p ~/.local/bin
-  [ -n "$(command -v fdfind 2>/dev/null)" ] && run ln -sf "$(command -v fdfind)" ~/.local/bin/fd
-  [ -n "$(command -v batcat 2>/dev/null)" ] && run ln -sf "$(command -v batcat)" ~/.local/bin/bat
+  # Debian names fd/bat differently; expose the standard names via journaled
+  # symlinks (tx_symlink records the undo; a plain ln -sf would survive rollback).
+  if [ "${DRY_RUN:-0}" = 1 ]; then
+    run mkdir -p ~/.local/bin
+    [ -n "$(command -v fdfind 2>/dev/null)" ] && run ln -sf "$(command -v fdfind)" ~/.local/bin/fd
+    [ -n "$(command -v batcat 2>/dev/null)" ] && run ln -sf "$(command -v batcat)" ~/.local/bin/bat
+  else
+    tx_mkdir ~/.local/bin
+    [ -n "$(command -v fdfind 2>/dev/null)" ] && tx_symlink "$(command -v fdfind)" ~/.local/bin/fd
+    [ -n "$(command -v batcat 2>/dev/null)" ] && tx_symlink "$(command -v batcat)" ~/.local/bin/bat
+  fi
 elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "pacman" ]; then
   SUDO=""
   if [ "$(id -u)" -ne 0 ]; then

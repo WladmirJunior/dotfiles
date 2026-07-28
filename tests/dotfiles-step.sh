@@ -28,7 +28,7 @@ exit 0
 SH
 chmod +x "$TMP/bin/git" "$TMP/bin/ya"
 
-run_step() {  # run_step HOME_DIR GIT_INCLUDES GIT_CALLS TX_LOG
+run_step() {  # run_step HOME_DIR GIT_INCLUDES GIT_CALLS TX_LOG [OS_TYPE]
   mkdir -p "$1"
   HOME="$1" \
   PATH="$TMP/bin:/usr/bin:/bin" \
@@ -37,7 +37,7 @@ run_step() {  # run_step HOME_DIR GIT_INCLUDES GIT_CALLS TX_LOG
   TX_LOG="$4" \
   SETUP_TRASH_ROOT="$TMP/trash-root" \
   DOTFILES_DIR="$ROOT" \
-  OS_TYPE=Linux \
+  OS_TYPE="${5:-Linux}" \
     bash "$ROOT/steps/03-dotfiles.sh" >/dev/null
 }
 
@@ -45,6 +45,25 @@ run_step() {  # run_step HOME_DIR GIT_INCLUDES GIT_CALLS TX_LOG
 run_step "$TMP/home-a" "" "$TMP/git-a.calls" "$TMP/tx-a.jsonl"
 grep -q "^config --global include.path $TMP/home-a/.gitconfig.delta$" "$TMP/git-a.calls"
 grep -q 'git_include_path' "$TMP/tx-a.jsonl"
+# ~/dev creation is journaled (tx_mkdir), not a raw mkdir rollback cannot see.
+[ -d "$TMP/home-a/dev" ]
+grep -q "mkdir:$TMP/home-a/dev" "$TMP/tx-a.jsonl"
+
+# 1b) macOS run: the ~/Developer and ~/.local/bin/timeout symlinks are
+# journaled through tx_symlink instead of raw ln -sfn.
+cat > "$TMP/bin/gtimeout" <<'SH'
+#!/bin/sh
+exit 0
+SH
+chmod +x "$TMP/bin/gtimeout"
+run_step "$TMP/home-mac" "" "$TMP/git-mac.calls" "$TMP/tx-mac.jsonl" Darwin
+[ -L "$TMP/home-mac/Developer" ]
+[ "$(readlink "$TMP/home-mac/Developer")" = "$TMP/home-mac/dev" ]
+grep -q "symlink:$TMP/home-mac/Developer" "$TMP/tx-mac.jsonl"
+# (target not pinned: a macOS host may resolve the homebrew gnubin path
+# instead of the stubbed gtimeout; the journal entry is the contract here)
+[ -L "$TMP/home-mac/.local/bin/timeout" ]
+grep -q "symlink:$TMP/home-mac/.local/bin/timeout" "$TMP/tx-mac.jsonl"
 
 # 2) Entry already present before the run: no re-set, and NO --unset undo that
 # would strip the user's pre-existing config on rollback.

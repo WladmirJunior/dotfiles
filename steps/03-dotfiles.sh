@@ -138,11 +138,12 @@ fi
 # macOS, ~/Developer is a symlink to ~/dev so the folder shows with the standard
 # Mac icon while the real content lives in one place. Idempotent: if ~/Developer
 # is already a real dir with content, leave it and just warn (a one-time manual
-# merge is safer than moving files automatically).
-run mkdir -p "$HOME/dev"
+# merge is safer than moving files automatically). Journaled (tx_mkdir/lnk) so
+# a rollback removes exactly what this run created.
+if [ "${DRY_RUN:-0}" = 1 ]; then run mkdir -p "$HOME/dev"; else tx_mkdir "$HOME/dev"; fi
 if [ "$OS_TYPE" = "Darwin" ]; then
   if [ -L "$HOME/Developer" ] || [ ! -e "$HOME/Developer" ]; then
-    run ln -sfn "$HOME/dev" "$HOME/Developer"
+    lnk "$HOME/dev" "$HOME/Developer"
   else
     note "~/Developer is a real directory; leaving it. Merge into ~/dev manually, then: ln -sfn ~/dev ~/Developer"
   fi
@@ -155,8 +156,7 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   GTIMEOUT="/opt/homebrew/opt/coreutils/libexec/gnubin/timeout"
   [ -e "$GTIMEOUT" ] || GTIMEOUT="$(command -v gtimeout 2>/dev/null || true)"   # empty is handled below
   if [ -n "$GTIMEOUT" ] && [ -e "$GTIMEOUT" ]; then
-    run mkdir -p "$HOME/.local/bin"
-    run ln -sfn "$GTIMEOUT" "$HOME/.local/bin/timeout"
+    lnk "$GTIMEOUT" "$HOME/.local/bin/timeout"
   else
     note "coreutils timeout not found; skipping ~/.local/bin/timeout symlink"
   fi
