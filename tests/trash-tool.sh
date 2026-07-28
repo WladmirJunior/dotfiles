@@ -65,4 +65,25 @@ rc=0; bash "$ROOT/scripts/trash-tool.sh" restore 1800000000-9-dotfiles \
 [ "$rc" -eq 2 ]
 [ -f "$RUN2/orphan" ]   # nothing was moved
 
+# ── tampered MANIFEST: stored outside the quarantine dir must be skipped ─────
+RUN3="$BASE/1900000000-7-dotfiles"
+mkdir -p "$RUN3" "$TMP/victim-src"
+printf 'stolen\n' > "$TMP/victim-src/data"
+printf '%s -> %s\n' "$TMP/victim-dst" "$TMP/victim-src/data" > "$RUN3/MANIFEST"
+bash "$ROOT/scripts/trash-tool.sh" restore "$RUN3" > "$TMP/tamper.out" 2>&1 || true
+grep -q 'stored path outside this quarantine dir' "$TMP/tamper.out"
+[ -f "$TMP/victim-src/data" ]      # untouched
+[ ! -e "$TMP/victim-dst" ]         # nothing written
+
+# ── a parked name containing " -> " mis-splits; must skip, never move blind ──
+RUN4="$BASE/1900000001-8-dotfiles"
+mkdir -p "$RUN4"
+printf 'weird\n' > "$RUN4/a -> b"
+printf '%s -> %s\n' "$TMP/origin/a -> b" "$RUN4/a -> b" > "$RUN4/MANIFEST"
+( cd "$TMP" && printf 'decoy\n' > b && \
+  bash "$ROOT/scripts/trash-tool.sh" restore "$RUN4" > "$TMP/missplit.out" 2>&1 ) || true
+[ -f "$TMP/b" ]                    # decoy in CWD untouched
+grep -q 'decoy' "$TMP/b"
+grep -q 'skip' "$TMP/missplit.out"
+
 echo "Trash tool tests passed."

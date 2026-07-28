@@ -41,7 +41,7 @@ print(json.dumps({"timestamp":e["TS"],"step":e["STEP"],"rc":int(e["RC"]),"durati
   fi
   [ -n "$line" ] || return 0
   mkdir -p "$(dirname "$TELEMETRY_LOG")" 2>/dev/null || return 0
-  printf '%s\n' "$line" >> "$TELEMETRY_LOG" 2>/dev/null || return 0
+  { printf '%s\n' "$line" >> "$TELEMETRY_LOG"; } 2>/dev/null || return 0
   return 0
 }
 

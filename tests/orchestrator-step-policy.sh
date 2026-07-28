@@ -121,5 +121,10 @@ run_install broken '20-optfail.sh optional' || {
   echo "steps stopped running after a telemetry append failure" >&2
   exit 1
 }
+# ...and the failure is silent: no raw bash redirection error leaks to output.
+if grep -q 'runs.jsonl' "$TMP/broken.out"; then
+  echo "telemetry append failure leaked a raw error into install output" >&2
+  exit 1
+fi
 
 echo "Orchestrator step-policy tests passed."

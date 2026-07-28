@@ -393,11 +393,10 @@ abort_install() {
 }
 
 # Telemetry mode label for this run. A completed base install re-running is a
-# maintenance pass; --check never reaches the step loop but is labeled anyway.
+# maintenance pass. --check exits in verify_install long before this loop, so
+# it needs no label here.
 INSTALL_RUN_MODE="install"
-if [ "$CHECK_ONLY" = 1 ]; then
-  INSTALL_RUN_MODE="check"
-elif [ "$DRY_RUN" = 1 ]; then
+if [ "$DRY_RUN" = 1 ]; then
   INSTALL_RUN_MODE="dry-run"
 elif command -v state_is >/dev/null 2>&1 && state_is public.base complete; then
   INSTALL_RUN_MODE="maintenance"
