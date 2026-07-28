@@ -11,6 +11,11 @@ source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
 # failure. When the lib isn't sourced (step run standalone), the tx_* calls
 # below are stubbed to no-ops so the step still works on its own.
 [ -f "${DOTFILES_DIR:-.}/lib/transaction.sh" ] && source "${DOTFILES_DIR:-.}/lib/transaction.sh" 2>/dev/null || true
+# Checkpoint store (persisted interactive choices). Stubbed standalone: absent
+# state means "never asked", so the prompt still shows.
+[ -f "${DOTFILES_DIR:-.}/lib/state.sh" ] && source "${DOTFILES_DIR:-.}/lib/state.sh" 2>/dev/null || true
+command -v state_is  >/dev/null 2>&1 || state_is() { return 1; }
+command -v state_set >/dev/null 2>&1 || state_set() { :; }
 # No 2>/dev/null here: the eager catalog validation diagnostic must reach the
 # user (per-lookup validation still fails closed if this source is skipped).
 [ -f "${DOTFILES_DIR:-.}/lib/packages/catalog.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/catalog.sh" || true
@@ -223,17 +228,25 @@ fi
 # Optional terminal multiplexer. It belongs to the CLI packages category and
 # starts selected in the interactive setup. Automation can set
 # WANT_TMUX=yes|no explicitly; non-interactive runs preserve the old skip
-# behavior unless opted in.
+# behavior unless opted in. A declined choice is persisted
+# (packages.tmux=declined) so maintenance re-runs stop re-asking; re-ask by
+# clearing the state, or override directly with WANT_TMUX=yes.
 want_tmux="${WANT_TMUX:-}"
 if command -v tmux >/dev/null 2>&1; then
   echo "  tmux: already installed"
+elif [ -z "$want_tmux" ] && state_is packages.tmux declined; then
+  echo "  tmux: previously declined; skipping (export WANT_TMUX=yes to install)"
+  want_tmux=no
 elif [ -z "$want_tmux" ] && [ "${DRY_RUN:-0}" != 1 ] \
    && command -v pick >/dev/null 2>&1; then
   PICK_SELECTED="tmux"
   tmux_selection="$(pick "Optional CLI packages" tmux)"
   case ",$tmux_selection," in
     *,tmux,*) want_tmux=yes ;;
-    *) want_tmux=no ;;
+    *)
+      want_tmux=no
+      state_set packages.tmux declined || true
+      ;;
   esac
 fi
 

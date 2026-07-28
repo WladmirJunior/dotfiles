@@ -225,7 +225,30 @@ choose1() {  # choose1 "Header" opt...  → single choice (echoes the picked opt
   local h="$1"; shift
   if have_gum; then "$GUM" choose --header="${PAD}$h  (↑↓ move · enter select)" \
       --cursor="${PAD}> " --cursor.foreground=$THEME_ACCENT --header.foreground=$THEME_PRIMARY "$@" </dev/tty
-  else echo "$1"; fi
+  else
+    # Plain fallback: numbered menu on stderr (stdout carries the picked
+    # option), answer read from /dev/tty, empty answer = first option. Without
+    # a usable TTY the first option is still the default, but the silent pick
+    # is announced instead of pretending the user chose it. The open test
+    # (not `-r`) matters: /dev/tty stays permission-readable even when the
+    # process has no controlling terminal, but opening it fails.
+    local opts=("$@") opt i reply
+    if { : </dev/tty; } 2>/dev/null; then
+      {
+        printf '%s%s\n' "$PAD" "$h"
+        i=1
+        for opt in "${opts[@]}"; do printf '%s  %d) %s\n' "$PAD" "$i" "$opt"; i=$((i+1)); done
+        printf '%sChoice [1-%d] (enter = 1): ' "$PAD" "$#"
+      } >&2
+      IFS= read -r reply </dev/tty 2>/dev/null || reply=""
+      case "$reply" in ''|*[!0-9]*) reply=1 ;; esac
+      { [ "$reply" -ge 1 ] && [ "$reply" -le "$#" ]; } || reply=1
+      printf '%s\n' "${opts[reply-1]}"
+    else
+      printf '%sno TTY: defaulting to "%s"\n' "$PAD" "${opts[0]}" >&2
+      printf '%s\n' "${opts[0]}"
+    fi
+  fi
 }
 pick() {  # pick "Header" opt...  → multi choice ([ ]/[x]); comma-joined or 'none'
   # Pre-select items by exporting PICK_SELECTED to a comma-separated list of the

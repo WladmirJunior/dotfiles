@@ -72,6 +72,9 @@ TELEM="$TMP/state-optional/dotfiles/runs.jsonl"
 grep -q '"step":"10-pass.sh","rc":0' "$TELEM"
 grep -q '"step":"20-optfail.sh","rc":1' "$TELEM"
 grep -q '"step":"30-marker.sh","rc":0' "$TELEM"
+# Producer tag: every public line carries repo:"public" (parity with the
+# private overlay's repo:"private") so the shared log can be split.
+[ "$(grep -c '"repo":"public"' "$TELEM")" -eq 3 ]
 grep -q '"timestamp":"' "$TELEM"
 grep -q '"duration_s":' "$TELEM"
 grep -q '"mode":"install"' "$TELEM"
