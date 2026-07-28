@@ -1,7 +1,9 @@
 #!/bin/bash
 # Install essential CLI tools (Homebrew on macOS; APT, Pacman or DNF on Linux).
 # Requires: DOTFILES_DIR in env.
-set -uo pipefail
+# set -e: a failed mutation must fail the step (the orchestrator aborts and
+# rolls back); without it the trailing "done" echo masked mid-step failures.
+set -euo pipefail
 [ -z "${OS_TYPE:-}" ] && source "${DOTFILES_DIR:-.}/lib/detect.sh"
 source "${DOTFILES_DIR:-.}/lib/exec.sh" 2>/dev/null || true
 source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
@@ -14,7 +16,7 @@ source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
 [ -f "${DOTFILES_DIR:-.}/lib/packages/apt.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/apt.sh" 2>/dev/null || true
 [ -f "${DOTFILES_DIR:-.}/lib/packages/pacman.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/pacman.sh" 2>/dev/null || true
 [ -f "${DOTFILES_DIR:-.}/lib/packages/dnf.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/dnf.sh" 2>/dev/null || true
-for fn in tx_brew_install tx_brew_cask tx_apt_install tx_pacman_install tx_dnf_install tx_brew_self; do
+for fn in tx_brew_install tx_brew_cask tx_apt_install tx_pacman_install tx_dnf_install tx_brew_self tx_run; do
   command -v "$fn" >/dev/null 2>&1 || eval "$fn() { :; }"
 done
 command -v run >/dev/null 2>&1 || run() { [ "${DRY_RUN:-0}" = 1 ] && { echo "[dry-run] $*"; return 0; }; "$@"; }
@@ -76,6 +78,9 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   # tlrc and tldr both ship a `tldr` binary; a legacy `tldr` install (older setups)
   # makes `brew install tlrc` abort with a conflict. Drop it first so tlrc wins.
   if [ "${DRY_RUN:-0}" != 1 ] && brew list --formula 2>/dev/null | grep -qx tldr; then
+    # This removes a PRE-EXISTING package, so record its reinstall as the undo
+    # before touching it; rollback then puts tldr back instead of losing it.
+    tx_run "brew_replace:tldr" brew install tldr -- true
     run brew unlink tldr
     run brew uninstall tldr
   fi
@@ -104,8 +109,10 @@ if [ "$OS_TYPE" = "Darwin" ]; then
     if [ -n "$nvim_opt_missing" ]; then
       # shellcheck disable=SC2086
       PICK_SELECTED="$(echo $nvim_opt_missing | tr ' ' ',')"
+      # `|| true`: with no usable TTY, pick/gum fails; degrade to installing
+      # nothing instead of aborting the whole step over an optional extra.
       # shellcheck disable=SC2086
-      picked=$(pick "Optional Neovim LSPs/formatters" $nvim_opt_missing)
+      picked=$(pick "Optional Neovim LSPs/formatters" $nvim_opt_missing || true)
       if [ "$picked" != none ] && [ -n "$picked" ]; then
         picked_pkgs="$(echo "$picked" | tr ',' ' ')"
         # shellcheck disable=SC2086
@@ -119,7 +126,15 @@ elif [ "$OS_TYPE" = "Linux" ] && [ "${PACKAGE_MANAGER:-}" = "apt" ]; then
   [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO=sudo
 
   TX_SUDO="$SUDO"   # used by tx_apt_install's undo (apt-get remove)
-  run $SUDO apt-get update -qq
+  # First install: a broken index is fatal (fail fast before mutating). On a
+  # maintenance re-run one dead PPA must not abort the whole run; the cached
+  # indexes still serve the official repositories.
+  if source "${DOTFILES_DIR:-.}/lib/state.sh" 2>/dev/null && state_is public.base complete; then
+    run $SUDO apt-get update -qq \
+      || echo "  apt index refresh failed; proceeding with cached indexes" >&2
+  else
+    run $SUDO apt-get update -qq
+  fi
   # Install in two passes so a missing package in one distro (e.g. trixie removed
   # `software-properties-common` from the default repo) doesn't drop the rest.
   # First pass: core tools that must be there. Second pass: nice-to-haves, best-effort.

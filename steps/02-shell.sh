@@ -1,6 +1,8 @@
 #!/bin/bash
 # fzf setup, zsh plugins, set default shell to zsh.
-set -uo pipefail
+# set -e: a failed mutation must fail the step (the orchestrator aborts and
+# rolls back); without it the trailing "done" echo masked mid-step failures.
+set -euo pipefail
 [ -z "${OS_TYPE:-}" ] && source "${DOTFILES_DIR:-.}/lib/detect.sh"
 source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
 # Transaction helpers: record mutations so the orchestrator can roll back on
@@ -22,7 +24,9 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   [ "${DRY_RUN:-0}" != 1 ] && tx_created_path "$HOME/.fzf.zsh"
   run "$(brew --prefix)/opt/fzf/install" --all --no-bash --no-fish
 else
-  FZF_INSTALL=$(find /usr/share -name install.sh 2>/dev/null | grep fzf | head -n 1)
+  # `|| true`: no fzf installer found is a valid outcome (the elif/else below
+  # handle it); under pipefail the empty grep would otherwise abort the step.
+  FZF_INSTALL=$(find /usr/share -name install.sh 2>/dev/null | grep fzf | head -n 1 || true)
   if [ -n "$FZF_INSTALL" ]; then
     [ "${DRY_RUN:-0}" != 1 ] && tx_created_path "$HOME/.fzf.zsh"
     run bash "$FZF_INSTALL" --all --no-bash --no-fish
@@ -60,7 +64,7 @@ clone_plugin https://github.com/MichaelAquilina/zsh-you-should-use.git ~/.config
 
 if [ "$OS_TYPE" = "Linux" ]; then
   CURRENT_SHELL="$(getent passwd "$(whoami)" | cut -d: -f7)"
-  ZSH_PATH="$(command -v zsh)"
+  ZSH_PATH="$(command -v zsh || true)"   # empty (not fatal) when zsh is absent
   if [ -n "$ZSH_PATH" ] && [ "$CURRENT_SHELL" != "$ZSH_PATH" ]; then
     echo "Setting default shell to zsh..."
     if command -v chsh >/dev/null 2>&1; then

@@ -4,7 +4,9 @@
 # headless hosts default to `minimal`, which skips this step entirely.
 # Terminal, fonts, password manager, Touch ID for sudo. Personal apps
 # (browsers, editors, container runtimes) live in a personal overlay.
-set -uo pipefail
+# set -e: a failed mutation must fail the step (the orchestrator aborts and
+# rolls back); without it the trailing "done" echo masked mid-step failures.
+set -euo pipefail
 [ -z "${OS_TYPE:-}" ] && source "${DOTFILES_DIR:-.}/lib/detect.sh"
 source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
 # Transaction helpers: record mutations so the orchestrator can roll back on

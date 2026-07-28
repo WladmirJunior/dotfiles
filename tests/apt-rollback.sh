@@ -49,4 +49,30 @@ if grep -q 'apt_install:zsh\|apt_install:eza' "$TMP/tx.jsonl"; then
   exit 1
 fi
 
+# ── apt-get update failure: fatal on first install, tolerated on maintenance ──
+cat > "$TMP/bin/apt-get" <<'SH'
+#!/bin/sh
+case "$1" in update) exit 100 ;; esac
+printf '%s\n' "$*" >> "$APT_CALLS"
+SH
+chmod +x "$TMP/bin/apt-get"
+
+if HOME="$TMP/home" PATH="$TMP/bin:/usr/bin:/bin" APT_CALLS="$TMP/apt.calls" \
+  DOTFILES_DIR="$ROOT" TX_LOG="$TMP/tx2.jsonl" OS_TYPE=Linux PACKAGE_MANAGER=apt \
+  XDG_STATE_HOME="$TMP/state-first" \
+  bash "$ROOT/steps/01-packages.sh" >/dev/null 2>&1; then
+  echo "first install continued past a failed apt-get update" >&2
+  exit 1
+fi
+
+mkdir -p "$TMP/state-maint/dotfiles"
+printf 'public.base=complete\n' > "$TMP/state-maint/dotfiles/setup.state"
+if ! HOME="$TMP/home" PATH="$TMP/bin:/usr/bin:/bin" APT_CALLS="$TMP/apt.calls" \
+  DOTFILES_DIR="$ROOT" TX_LOG="$TMP/tx3.jsonl" OS_TYPE=Linux PACKAGE_MANAGER=apt \
+  XDG_STATE_HOME="$TMP/state-maint" \
+  bash "$ROOT/steps/01-packages.sh" >/dev/null 2>&1; then
+  echo "maintenance re-run aborted on a failed apt index refresh" >&2
+  exit 1
+fi
+
 echo "APT rollback safety test passed."

@@ -1,6 +1,8 @@
 #!/bin/bash
 # Link config files into the system using symlinks.
-set -uo pipefail
+# set -e: a failed mutation must fail the step (the orchestrator aborts and
+# rolls back); without it the trailing "done" echo masked mid-step failures.
+set -euo pipefail
 [ -z "${OS_TYPE:-}" ] && source "${DOTFILES_DIR:-.}/lib/detect.sh"
 D="${DOTFILES_DIR:?DOTFILES_DIR not set}"
 # Source ui.sh for run()/note (dry-run + quarantine helpers). Falls back to a
@@ -73,10 +75,13 @@ if command -v ya >/dev/null 2>&1; then
     run env YAZI_CONFIG_HOME="$HOME/.config/yazi" ya pkg install --discard
   elif [ ! -d "$YAZI_PLUGIN" ]; then
     # Undo: move the plugin dir the install creates to recoverable trash.
+    # Plugins are cosmetic: a registry hiccup must not abort the install.
     tx_created_path "$YAZI_PLUGIN" yazi-plugin-git
-    env YAZI_CONFIG_HOME="$HOME/.config/yazi" ya pkg install --discard
+    env YAZI_CONFIG_HOME="$HOME/.config/yazi" ya pkg install --discard \
+      || echo "  yazi plugin install failed; continuing" >&2
   else
-    env YAZI_CONFIG_HOME="$HOME/.config/yazi" ya pkg install --discard
+    env YAZI_CONFIG_HOME="$HOME/.config/yazi" ya pkg install --discard \
+      || echo "  yazi plugin install failed; continuing" >&2
   fi
 fi
 
@@ -117,8 +122,12 @@ else
 fi
 if [ "${DRY_RUN:-0}" = 1 ]; then
   run git config --global include.path "$DELTA"
+elif git config --global --get-all include.path 2>/dev/null | grep -qxF "$DELTA"; then
+  : # entry pre-exists: nothing to change, and no undo (an unconditional
+    # --unset on rollback would strip config this run never added)
 else
-  # Undo: drop the include.path entry we add (best-effort; --unset on the exact value).
+  # Undo: drop the include.path entry we add. Recorded only because the entry
+  # did NOT exist before this run (checked above).
   tx_run "git_include_path" git config --global --unset include.path "$DELTA" -- git config --global include.path "$DELTA"
 fi
 # Git identity is intentionally not set here. The old prompt wrote an empty
@@ -144,7 +153,7 @@ fi
 # reach for `timeout` (the Claude Code harness pushes toward it) just work.
 if [ "$OS_TYPE" = "Darwin" ]; then
   GTIMEOUT="/opt/homebrew/opt/coreutils/libexec/gnubin/timeout"
-  [ -e "$GTIMEOUT" ] || GTIMEOUT="$(command -v gtimeout 2>/dev/null)"
+  [ -e "$GTIMEOUT" ] || GTIMEOUT="$(command -v gtimeout 2>/dev/null || true)"   # empty is handled below
   if [ -n "$GTIMEOUT" ] && [ -e "$GTIMEOUT" ]; then
     run mkdir -p "$HOME/.local/bin"
     run ln -sfn "$GTIMEOUT" "$HOME/.local/bin/timeout"

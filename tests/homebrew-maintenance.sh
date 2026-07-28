@@ -16,6 +16,7 @@ cat > "$TMP/bin/brew" <<'SH'
 printf '%s\n' "$*" >> "$BREW_CALLS"
 case "$1 $2 $3" in
   "outdated --formula --quiet") printf 'git\n' ;;
+  "list --formula ") printf 'tldr\n' ;;   # bare listing: a legacy tldr install
   "list --formula gh") exit 1 ;;
   "list --formula "*) exit 0 ;;
 esac
@@ -43,5 +44,11 @@ if grep -q 'brew_install:git\|brew_install:neovim' "$TMP/tx.jsonl"; then
   echo "rollback recorded a pre-existing formula" >&2
   exit 1
 fi
+
+# The pre-existing legacy tldr is removed, but only AFTER recording its
+# reinstall as the undo, so rollback restores it.
+grep -qx 'unlink tldr' "$TMP/brew.calls"
+grep -qx 'uninstall tldr' "$TMP/brew.calls"
+grep -q 'brew_replace:tldr' "$TMP/tx.jsonl"
 
 echo "Homebrew maintenance test passed."
