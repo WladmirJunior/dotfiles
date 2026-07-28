@@ -11,7 +11,9 @@ source "${DOTFILES_DIR:-.}/lib/ui.sh" 2>/dev/null || true
 # failure. When the lib isn't sourced (step run standalone), the tx_* calls
 # below are stubbed to no-ops so the step still works on its own.
 [ -f "${DOTFILES_DIR:-.}/lib/transaction.sh" ] && source "${DOTFILES_DIR:-.}/lib/transaction.sh" 2>/dev/null || true
-[ -f "${DOTFILES_DIR:-.}/lib/packages/catalog.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/catalog.sh" 2>/dev/null || true
+# No 2>/dev/null here: the eager catalog validation diagnostic must reach the
+# user (per-lookup validation still fails closed if this source is skipped).
+[ -f "${DOTFILES_DIR:-.}/lib/packages/catalog.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/catalog.sh" || true
 [ -f "${DOTFILES_DIR:-.}/lib/packages/brew.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/brew.sh" 2>/dev/null || true
 [ -f "${DOTFILES_DIR:-.}/lib/packages/apt.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/apt.sh" 2>/dev/null || true
 [ -f "${DOTFILES_DIR:-.}/lib/packages/pacman.sh" ] && source "${DOTFILES_DIR:-.}/lib/packages/pacman.sh" 2>/dev/null || true

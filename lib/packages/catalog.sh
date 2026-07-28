@@ -33,7 +33,13 @@ package_catalog_validate() {
       printf "line %d: expected 6 tab-separated columns, found %d\n", NR, NF
       next
     }
-    NR == 1 { next }
+    NR == 1 {
+      # Column positions are hardcoded by _package_catalog_column; a reordered
+      # header would silently serve another manager'\''s packages.
+      if ($0 != "scope\tcapability\tbrew\tapt\tpacman\tdnf")
+        printf "line 1: unexpected header (expected scope/capability/brew/apt/pacman/dnf order)\n"
+      next
+    }
     $1 != "core" && $1 != "best-effort" && $1 != "nvim-optional" {
       printf "line %d: unknown scope \"%s\" (expected core, best-effort or nvim-optional)\n", NR, $1
       next

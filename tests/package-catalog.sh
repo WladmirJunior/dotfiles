@@ -69,6 +69,12 @@ expect_invalid "$TMP/no-capability.tsv" 'line 2: missing capability'
 printf '%s\ncore\tshell\t-\t\tzsh\tzsh\n' "$TSV_HEADER" > "$TMP/empty-cell.tsv"
 expect_invalid "$TMP/empty-cell.tsv" 'line 2: empty package column 4'
 
+# A consistently reordered catalog (header + data) must fail: lookup columns
+# are positional, so accepting it would serve another manager's packages.
+printf 'scope\tcapability\tapt\tbrew\tpacman\tdnf\ncore\tshell\tzsh\t-\tzsh\tzsh\n' \
+  > "$TMP/reordered.tsv"
+expect_invalid "$TMP/reordered.tsv" 'line 1: unexpected header'
+
 # The same capability in DIFFERENT scopes is legitimate (core on one distro,
 # best-effort on another); only a same-scope duplicate is an error.
 printf '%s\ncore\tshell\t-\tzsh\tzsh\tzsh\nbest-effort\tshell\t-\tzsh\t-\tzsh\n' "$TSV_HEADER" \
