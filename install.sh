@@ -34,6 +34,35 @@ for arg in "$@"; do
 done
 export DRY_RUN PLAN_MODE
 
+# Step optionality table: one "step-filename policy" pair per line; policy is
+# required or optional. required: a failure aborts the install (with rollback).
+# optional: a failure is warned, recorded and the install continues. Steps not
+# listed default to required (fail-closed). Every public step is required
+# today; declare a future nice-to-have step optional HERE instead of
+# special-casing its filename in the run loop. Overridable via env so the test
+# harness can exercise both policies.
+STEP_POLICY_TABLE="${STEP_POLICY_TABLE:-
+01-packages.sh required
+02-shell.sh required
+03-dotfiles.sh required
+04-apps.sh required
+}"
+
+# step_policy STEP_FILENAME: print the declared policy for a step; anything
+# unlisted (or with a mistyped policy) is required.
+step_policy() {
+  local step_name="$1" name policy
+  while read -r name policy; do
+    [ "$name" = "$step_name" ] || continue
+    case "$policy" in
+      required|optional) printf '%s\n' "$policy"; return 0 ;;
+    esac
+  done <<STEP_POLICY_TABLE
+$STEP_POLICY_TABLE
+STEP_POLICY_TABLE
+  printf 'required\n'
+}
+
 SELF_DIR="$( cd "$( dirname "${BASH_SOURCE[0]:-/dev/null}" )" 2>/dev/null && pwd )"
 if [ -n "$SELF_DIR" ] && [ -d "$SELF_DIR/steps" ] && [ -d "$SELF_DIR/profiles" ]; then
   # ~/.dotfiles is the canonical location even when the user initially cloned
@@ -285,6 +314,7 @@ abort_install() {
 }
 
 STEP_N=0
+OPTIONAL_STEP_FAILURES=""
 while IFS= read -r step <&3; do
   [ -z "$step" ] && continue
   case "$step" in \#*) continue ;; esac
@@ -304,11 +334,20 @@ while IFS= read -r step <&3; do
       && step_status="$(step_status_label "$step_rc" 2>/dev/null || true)"
     if [ -n "$step_status" ]; then
       note "step $step: $step_status (rc=$step_rc); continuing"
+    elif [ "$(step_policy "$step")" = optional ]; then
+      note "optional step $step failed (rc=$step_rc); continuing"
+      OPTIONAL_STEP_FAILURES="$OPTIONAL_STEP_FAILURES $step"
     else
       abort_install "$step" "$step_rc"
     fi
   fi
 done 3< "$PROFILE_FILE"
+
+# Optional-step failures never abort, but they must not vanish either: repeat
+# them once the loop is over so they are visible after a long install.
+if [ -n "$OPTIONAL_STEP_FAILURES" ]; then
+  note "optional step(s) failed:$OPTIONAL_STEP_FAILURES (the install continued; re-run after fixing)"
+fi
 
 # All steps succeeded: commit the transaction (rotate the log, no rollback).
 [ "$TX_ENABLED" = 1 ] && tx_commit
