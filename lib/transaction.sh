@@ -35,13 +35,67 @@ export DOTFILES_INSTALLER_API
 
 TX_LOG="${TX_LOG:-$HOME/.dotfiles-install.jsonl}"
 TX_LAST="${TX_LAST:-$HOME/.dotfiles-install.last.jsonl}"
+TX_LOCK_DIR="${TX_LOCK_DIR:-$TX_LOG.lock}"
 TX_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$TX_LIB_DIR/trash.sh"
 
-# tx_init: start a fresh transaction log for this run.
+# tx_init: start a fresh transaction for this run.
+# Returns 2 when another install holds the lock (caller must not proceed) and
+# 1 when the journal path is unwritable. A leftover non-empty journal means the
+# previous run never committed (crash, kill, or a rollback that itself failed):
+# it is preserved as <TX_LOG>.abandoned-<epoch> with a loud warning, never
+# silently truncated, so its undo entries can still be replayed by hand.
 tx_init() {
   TX_SEQ=0
-  : > "$TX_LOG" 2>/dev/null || { echo "tx: cannot write $TX_LOG" >&2; return 1; }
+  # Single-writer lock: mkdir is atomic, and the PID stored inside identifies
+  # the owner so the stale lock of a crashed run can be reclaimed safely.
+  local lock_pid=""
+  if mkdir "$TX_LOCK_DIR" 2>/dev/null; then
+    printf '%s\n' "$$" > "$TX_LOCK_DIR/pid"
+  else
+    lock_pid="$(cat "$TX_LOCK_DIR/pid" 2>/dev/null || true)"
+    if [ "$lock_pid" = "$$" ]; then
+      :  # re-init from the same process; keep the lock we already own
+    elif [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
+      echo "tx: another install (pid $lock_pid) holds $TX_LOCK_DIR; refusing to start" >&2
+      return 2
+    else
+      echo "tx: reclaiming stale lock $TX_LOCK_DIR (pid ${lock_pid:-unknown} is gone)"
+      printf '%s\n' "$$" > "$TX_LOCK_DIR/pid"
+    fi
+  fi
+  if [ -s "$TX_LOG" ]; then
+    local abandoned
+    abandoned="$TX_LOG.abandoned-$(date +%s)"
+    if ! mv "$TX_LOG" "$abandoned" 2>/dev/null; then
+      # mv can fail while the file itself is still readable (e.g. the parent
+      # dir denies renames). Fall back to a copy; only a verified copy may
+      # authorize truncation, otherwise keep the journal untouched and bail.
+      if ! cp "$TX_LOG" "$abandoned" 2>/dev/null; then
+        echo "tx: WARNING: found an uncommitted journal from an interrupted run." >&2
+        echo "tx: could not preserve a copy of $TX_LOG; keeping it untouched." >&2
+        echo "tx: inspect it and replay its undo entries manually, then remove it." >&2
+        tx_release_lock
+        return 1
+      fi
+    fi
+    echo "tx: WARNING: found an uncommitted journal from an interrupted run." >&2
+    echo "tx: preserved at $abandoned" >&2
+    echo "tx: inspect it and replay its undo entries manually if that run left changes behind." >&2
+  fi
+  : > "$TX_LOG" 2>/dev/null || { echo "tx: cannot write $TX_LOG" >&2; tx_release_lock; return 1; }
+}
+
+# tx_release_lock: drop the install lock, but only if this process owns it.
+tx_release_lock() {
+  [ -d "$TX_LOCK_DIR" ] || return 0
+  local lock_pid
+  lock_pid="$(cat "$TX_LOCK_DIR/pid" 2>/dev/null || true)"
+  if [ -z "$lock_pid" ] || [ "$lock_pid" = "$$" ]; then
+    rm -f "$TX_LOCK_DIR/pid" 2>/dev/null || true
+    rmdir "$TX_LOCK_DIR" 2>/dev/null || true
+  fi
+  return 0
 }
 
 # _tx_seq: bump TX_SEQ, a per-transaction monotonic suffix for trash
@@ -128,6 +182,7 @@ tx_brew_self() {
   setup_trash_dir >/dev/null
   _tx_seq
   trash_dest="$(setup_trash_destination "homebrew-prefix-$TX_SEQ")"
+  setup_trash_manifest "$prefix" "$trash_dest"
   _tx_record "brew_self:$prefix" mv "$prefix" "$trash_dest"
 }
 tx_git_clone() {  # url dest
@@ -135,6 +190,7 @@ tx_git_clone() {  # url dest
   setup_trash_dir >/dev/null
   _tx_seq
   trash_dest="$(setup_trash_destination "clone-$(basename "$2")-$TX_SEQ")"
+  setup_trash_manifest "$2" "$trash_dest"
   _tx_record "git_clone:$2" mv "$2" "$trash_dest"
 }
 tx_created_path() {  # path [label]
@@ -144,6 +200,7 @@ tx_created_path() {  # path [label]
   setup_trash_dir >/dev/null
   _tx_seq
   trash_dest="$(setup_trash_destination "$label-$TX_SEQ")"
+  setup_trash_manifest "$path" "$trash_dest"
   _tx_record "created:$path" mv "$path" "$trash_dest"
 }
 tx_mkdir() {  # dir — only record if we actually create it
@@ -162,12 +219,14 @@ tx_symlink() {  # src dst
     _tx_seq
     trash_dest="$(setup_trash_destination "replaced-$(basename "$dst")-$TX_SEQ")"
     mv "$dst" "$trash_dest"
+    setup_trash_manifest "$dst" "$trash_dest"
     _tx_record "symlink:$dst" mv "$trash_dest" "$dst"
   else
     local new_link_trash
     setup_trash_dir >/dev/null
     _tx_seq
     new_link_trash="$(setup_trash_destination "link-$(basename "$dst")-$TX_SEQ")"
+    setup_trash_manifest "$dst" "$new_link_trash"
     _tx_record "symlink:$dst" mv "$dst" "$new_link_trash"
   fi
   ln -sfn "$src" "$dst"
@@ -192,43 +251,54 @@ tx_backup_path() {
   setup_trash_dir >/dev/null
   _tx_seq
   cleanup_dest="$(setup_trash_destination "backup-$(basename "$path")-$TX_SEQ")"
+  setup_trash_manifest "$path" "$cleanup_dest"
   _tx_record_backup "$op" "$backup" "$cleanup_dest" mv "$backup" "$path"
   mv "$path" "$backup"
 }
 
 # ── Rollback ──────────────────────────────────────────────────────────────────
 
-# _tx_exec_undo LINE: parse one JSONL line and run its .undo argv. Best-effort.
-# Tokens are decoded from base64 (jq @base64, newline-separated) so spaces and
-# shell metacharacters in paths survive without a NUL delimiter.
+# _tx_exec_undo LINE: parse one JSONL line and run its .undo argv. Tokens are
+# decoded from base64 (newline-separated) so spaces and shell metacharacters in
+# paths survive without a NUL delimiter. Sets TX_UNDO_LAST_OP to the entry's op
+# label and returns non-zero when the undo command itself failed, so
+# tx_rollback can report an honest summary instead of unconditional success.
 _tx_exec_undo() {
   local line="$1"
+  TX_UNDO_LAST_OP="?"
   [ -z "$line" ] && return 0
+  local decoded=() b64
   if _tx_have_jq; then
-    local op; op=$(printf '%s' "$line" | jq -r '.op // "?"' 2>/dev/null) || return 0
-    local argv=() b64
+    # First emitted token is the op label, the rest is the undo argv.
     while IFS= read -r b64; do
       [ -z "$b64" ] && continue
-      argv+=("$(printf '%s' "$b64" | base64 -d 2>/dev/null)")
-    done < <(printf '%s' "$line" | jq -r '.undo[]? | @base64' 2>/dev/null)
-    [ "${#argv[@]}" -eq 0 ] && return 0
-    echo "  undo: $op -> ${argv[*]}"
-    "${argv[@]}" >/dev/null 2>&1 || echo "    (undo failed, skipping)"
+      decoded+=("$(printf '%s' "$b64" | base64 -d 2>/dev/null)")
+    done < <(printf '%s' "$line" | jq -r '([.op // "?"] + (.undo // [])) | .[] | @base64' 2>/dev/null)
   else
-    # python fallback. NOTE: no heredoc here — a heredoc inside a function that
+    # python fallback. NOTE: no heredoc here: a heredoc inside a function that
     # gets `export -f`'d is re-serialized by bash and corrupts (the trailing
     # `|| true` ends up after the PY terminator -> syntax error in child shells
     # that inherit the exported function). Use `python3 -c` with the program as
     # a single-quoted arg instead, which survives export -f intact.
-    LINE="$line" python3 -c 'import json,os,subprocess,sys
+    while IFS= read -r b64; do
+      [ -z "$b64" ] && continue
+      decoded+=("$(printf '%s' "$b64" | base64 -d 2>/dev/null)")
+    done < <(LINE="$line" python3 -c 'import base64,json,os
 try:
     d=json.loads(os.environ["LINE"])
 except Exception:
-    sys.exit(0)
-u=d.get("undo") or []
-if u:
-    print("  undo: %s -> %s" % (d.get("op","?")," ".join(u)))
-    subprocess.run(u,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)' || true
+    raise SystemExit(0)
+for t in [str(d.get("op") or "?")] + [str(u) for u in (d.get("undo") or [])]:
+    print(base64.b64encode(t.encode()).decode())' 2>/dev/null)
+  fi
+  [ "${#decoded[@]}" -ge 1 ] || return 0
+  TX_UNDO_LAST_OP="${decoded[0]}"
+  [ "${#decoded[@]}" -ge 2 ] || return 0
+  local argv=("${decoded[@]:1}")
+  echo "  undo: $TX_UNDO_LAST_OP -> ${argv[*]}"
+  if ! "${argv[@]}" >/dev/null 2>&1; then
+    echo "    (undo FAILED: $TX_UNDO_LAST_OP)"
+    return 1
   fi
 }
 
@@ -254,34 +324,57 @@ if cleanup:
   fi
 }
 
-# tx_rollback: replay every recorded undo in reverse order. Best-effort — a
-# failing undo is logged and skipped so one bad entry doesn't strand the rest.
+# tx_rollback: replay every recorded undo in reverse order. A failing undo is
+# logged and skipped so one bad entry doesn't strand the rest, but every
+# failure is counted (TX_ROLLBACK_FAILED), listed at the end, and reflected in
+# the exit status: non-zero means the machine was only PARTIALLY restored. In
+# that case the journal is kept in place as evidence (the next tx_init moves it
+# aside as abandoned); on a fully clean rollback it rotates to .rolledback.
 tx_rollback() {
-  [ -s "$TX_LOG" ] || { echo "tx: nothing to roll back"; return 0; }
+  TX_ROLLBACK_FAILED=0
+  [ -s "$TX_LOG" ] || { echo "tx: nothing to roll back"; tx_release_lock; return 0; }
   if [ "${DOTFILES_NO_ROLLBACK:-0}" = 1 ]; then
-    echo "tx: DOTFILES_NO_ROLLBACK=1 — leaving $TX_LOG in place, not undoing"
+    echo "tx: DOTFILES_NO_ROLLBACK=1: leaving $TX_LOG in place, not undoing"
+    tx_release_lock
     return 0
   fi
   echo "tx: rolling back $(wc -l < "$TX_LOG" | tr -d ' ') recorded action(s)..."
   local tac
   if command -v tac >/dev/null 2>&1; then tac="tac"; else tac="tail -r"; fi
-  local line
+  local line failed_ops=""
   while IFS= read -r line; do
-    _tx_exec_undo "$line"
+    if ! _tx_exec_undo "$line"; then
+      TX_ROLLBACK_FAILED=$((TX_ROLLBACK_FAILED + 1))
+      failed_ops="${failed_ops:+$failed_ops, }${TX_UNDO_LAST_OP:-?}"
+    fi
   done < <($tac "$TX_LOG")
+  if [ "$TX_ROLLBACK_FAILED" -gt 0 ]; then
+    echo "tx: rollback finished with $TX_ROLLBACK_FAILED failed undo(s): $failed_ops" >&2
+    echo "tx: journal kept at $TX_LOG; the failed items may need manual cleanup." >&2
+    tx_release_lock
+    return 1
+  fi
+  # Fully undone: rotate the journal aside so the next tx_init does not treat
+  # this (already reverted) run as an abandoned one.
+  mv "$TX_LOG" "$TX_LOG.rolledback" 2>/dev/null || true
   echo "tx: rollback complete."
+  tx_release_lock
 }
 
-# tx_commit: call on full success. Rotate the live log to .last and clear it.
+# tx_commit: call on full success. Run recorded cleanups, rotate the live log
+# to .last, prune expired quarantine dirs and release the install lock.
 tx_commit() {
   if [ -s "$TX_LOG" ]; then
     local line
     while IFS= read -r line; do _tx_exec_cleanup "$line"; done < "$TX_LOG"
   fi
   if [ -f "$TX_LOG" ]; then mv "$TX_LOG" "$TX_LAST" 2>/dev/null || true; fi
+  command -v setup_trash_prune >/dev/null 2>&1 && setup_trash_prune
+  tx_release_lock
 }
 
-export -f tx_init _tx_seq _tx_have_jq _tx_record _tx_record_backup tx_brew_install tx_brew_cask \
+export -f tx_init tx_release_lock _tx_seq _tx_have_jq _tx_record _tx_record_backup \
+  tx_brew_install tx_brew_cask \
   tx_apt_install tx_pacman_install tx_dnf_install tx_brew_self tx_git_clone tx_created_path \
   tx_mkdir tx_symlink tx_run \
   tx_backup_path _tx_exec_undo _tx_exec_cleanup tx_rollback tx_commit 2>/dev/null || true

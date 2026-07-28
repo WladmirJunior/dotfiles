@@ -110,12 +110,32 @@ source "$DOTFILES_DIR/lib/ui.sh"
 
 # Transaction log: track mutations so a failed install rolls back cleanly
 # instead of leaving the machine half-configured. Disabled in dry-run/plan
-# (nothing is changed) and when the helper isn't present.
+# and in --check (verification-only: no lock, no journal handling) and when
+# the helper isn't present. tx_init also takes the single-install lock: rc 2
+# means another install is running, so this one must not proceed at all (two
+# concurrent runs would corrupt the journal).
 TX_ENABLED=0
-if [ "$DRY_RUN" != 1 ] && command -v tx_init >/dev/null 2>&1; then
-  if tx_init; then TX_ENABLED=1; fi
+if [ "$DRY_RUN" != 1 ] && [ "$CHECK_ONLY" != 1 ] && command -v tx_init >/dev/null 2>&1; then
+  tx_init
+  tx_rc=$?
+  if [ "$tx_rc" -eq 0 ]; then
+    TX_ENABLED=1
+  elif [ "$tx_rc" -eq 2 ]; then
+    echo "ERROR: another dotfiles install is already running. Finish or stop it, then re-run." >&2
+    exit 1
+  fi
 fi
 export TX_ENABLED
+
+# Release the install lock (and, later in the script, the sudo keepalive) on
+# any exit path. Guarded with command -v because an early exit can happen
+# before the helpers exist.
+install_cleanup() {
+  command -v sudo_keepalive_stop >/dev/null 2>&1 && sudo_keepalive_stop
+  [ "$TX_ENABLED" = 1 ] && command -v tx_release_lock >/dev/null 2>&1 && tx_release_lock
+  return 0
+}
+trap install_cleanup EXIT
 
 # verify_install: post-install health check. Symlinks resolve, core tools on PATH.
 # Run as the final step of a normal install, or standalone via `--check`.
@@ -230,7 +250,8 @@ if [ "$OS_TYPE" = "Linux" ] && [ "$(id -u)" -ne 0 ] && [ "$DRY_RUN" != 1 ]; then
     done
   ) &
   SUDO_KEEPALIVE_PID=$!
-  trap sudo_keepalive_stop EXIT
+  # No trap here: install_cleanup (set right after tx_init) already stops the
+  # keepalive on exit; a second EXIT trap would clobber it.
 fi
 
 # Read the profile on a dedicated FD (3), not stdin. Under `curl | bash` stdin is
@@ -247,9 +268,15 @@ abort_install() {
   note "step $failed_step failed (rc=$rc) — aborting install" 2>/dev/null \
     || echo "step $failed_step failed (rc=$rc) — aborting install" >&2
   if [ "$TX_ENABLED" = 1 ]; then
-    tx_rollback || true
-    note "machine restored to its pre-install state. Fix the cause and re-run." 2>/dev/null \
-      || echo "machine restored to its pre-install state. Fix the cause and re-run." >&2
+    if tx_rollback; then
+      note "machine restored to its pre-install state. Fix the cause and re-run." 2>/dev/null \
+        || echo "machine restored to its pre-install state. Fix the cause and re-run." >&2
+    else
+      # Never claim success when undos failed: point at the journal and the
+      # quarantine so the leftover state can be cleaned up by hand.
+      note "partial restore: ${TX_ROLLBACK_FAILED:-?} undo action(s) failed (see $TX_LOG and the quarantine dir)." 2>/dev/null \
+        || echo "partial restore: ${TX_ROLLBACK_FAILED:-?} undo action(s) failed (see $TX_LOG and the quarantine dir)." >&2
+    fi
   else
     note "no transaction log to roll back; inspect the partial state manually." 2>/dev/null \
       || echo "no transaction log; inspect partial state manually." >&2
@@ -264,11 +291,23 @@ while IFS= read -r step <&3; do
   STEP_N=$((STEP_N + 1))
   brew_env   # pick up a brew that an earlier step (01-packages) may have installed
   step "$STEP_N/$STEP_TOTAL" "$(step_title "$step")"
-  # Fail-fast: a non-zero step aborts the whole install and triggers rollback.
-  # Capture the step's real exit code directly (a `if ! cmd` would mask it as 1).
+  # Fail-fast: a non-zero step aborts the whole install and triggers rollback,
+  # EXCEPT the declared non-fatal statuses (STEP_SKIPPED and
+  # STEP_DEPENDENCY_UNAVAILABLE, see lib/step.sh), which are announced and the
+  # install moves on. Capture the step's real exit code directly (a `if ! cmd`
+  # would mask it as 1).
   step_execute "$DOTFILES_DIR/steps/$step"
   step_rc=$?
-  [ "$step_rc" -ne 0 ] && abort_install "$step" "$step_rc"
+  if [ "$step_rc" -ne 0 ]; then
+    step_status=""
+    command -v step_status_label >/dev/null 2>&1 \
+      && step_status="$(step_status_label "$step_rc" 2>/dev/null || true)"
+    if [ -n "$step_status" ]; then
+      note "step $step: $step_status (rc=$step_rc); continuing"
+    else
+      abort_install "$step" "$step_rc"
+    fi
+  fi
 done 3< "$PROFILE_FILE"
 
 # All steps succeeded: commit the transaction (rotate the log, no rollback).
@@ -404,7 +443,11 @@ configure_1password_ssh_agent_linux() {
   ok "1Password SSH agent configured with ${#selected_keys[@]} key(s)"
 }
 
-if [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
+# Dry-run stops here: everything below mutates state outside the step/tx
+# machinery (1Password install, ~/.zshrc.local, ~/.ssh/config, gh credentials).
+if [ "$DRY_RUN" = 1 ]; then
+  info "DRY-RUN: skipping the connect & authenticate phase (it changes shell/SSH config)."
+elif [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
   banner "Connect & authenticate · 1Password, GitHub, SSH"
 
   task "1Password · install & connect (one time)"

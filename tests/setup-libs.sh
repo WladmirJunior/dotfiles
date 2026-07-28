@@ -23,6 +23,7 @@ state_unset private.base
 
 TX_LOG="$TMP/tx.jsonl"
 TX_LAST="$TMP/tx.last.jsonl"
+SETUP_TRASH_ROOT="$TMP/trash-root"   # keep tx_commit's prune away from the real quarantine
 source "$ROOT/lib/transaction.sh"
 [ "$DOTFILES_INSTALLER_API" = 1 ]
 SETUP_TRASH_DIR="$TMP/trash"
