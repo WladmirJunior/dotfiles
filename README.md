@@ -66,7 +66,7 @@ curl -fsSL .../install.sh | bash -s -- pentest
 ```bash
 ./install.sh --dry-run minimal   # announce every action, change nothing (like terraform plan)
 ./install.sh -n minimal          # short form of --dry-run
-./install.sh --plan minimal      # like --dry-run but ends with a categorized summary
+./install.sh --plan minimal      # compatibility alias for --dry-run (same behavior)
 ./install.sh -p minimal          # short form of --plan
 ./install.sh --check             # verify-only: symlinks resolve, core tools on PATH, no steps run
 ```
@@ -74,10 +74,7 @@ curl -fsSL .../install.sh | bash -s -- pentest
 A normal install runs the verification automatically as its last step. `--dry-run`
 wraps every state-changing command (symlinks, copies, package installs, `defaults
 write`) so you can preview a run on a fresh machine before committing to it.
-
-`--plan` is `--dry-run` plus a final summary: create/update/replace/install/skip
-counts and a per-item list, color-coded. Use it to review what would change
-before applying.
+`--plan`/`-p` is kept as an alias of `--dry-run` for muscle memory; it adds nothing.
 
 ### Templates
 

@@ -11,8 +11,7 @@
 #
 # Flags:
 #   --dry-run, -n   announce every state-changing action without executing it
-#   --plan, -p      same as --dry-run but show a categorized summary at the end
-#                   (create/update/install/skip counts + per-item list)
+#   --plan, -p      compatibility alias for --dry-run (announced in the header)
 #   --check         run only the post-install verification (no steps)
 #   --status        read-only drift report: catalog vs installed packages for
 #                   this OS (no lock, no transaction, no TTY needed);
@@ -25,18 +24,18 @@ REPO_REF="${DOTFILES_REF:-main}"        # branch/tag/sha to fetch (override via 
 CLONE_DIR="$HOME/.dotfiles"
 
 # Parse flags (any order) and keep the first non-flag arg as the profile.
-DRY_RUN=0; CHECK_ONLY=0; PLAN_MODE=0; STATUS_ONLY=0; PROFILE_ARG=""
+DRY_RUN=0; CHECK_ONLY=0; STATUS_ONLY=0; PROFILE_ARG=""
 for arg in "$@"; do
   case "$arg" in
     --dry-run|-n) DRY_RUN=1 ;;
-    --plan|-p)    DRY_RUN=1; PLAN_MODE=1 ;;
+    --plan|-p)    DRY_RUN=1 ;;   # compatibility alias; no separate plan machinery
     --check)      CHECK_ONLY=1 ;;
     --status)     STATUS_ONLY=1 ;;
     -*)           echo "Unknown flag: $arg" >&2; exit 2 ;;
     *)            [ -z "$PROFILE_ARG" ] && PROFILE_ARG="$arg" ;;
   esac
 done
-export DRY_RUN PLAN_MODE
+export DRY_RUN
 
 # Step optionality table: one "step-filename policy" pair per line; policy is
 # required or optional. required: a failure aborts the install (with rollback).
@@ -138,10 +137,8 @@ source "$DOTFILES_DIR/lib/ui.sh"
 [ -f "$DOTFILES_DIR/lib/step.sh" ]        && source "$DOTFILES_DIR/lib/step.sh"
 [ -f "$DOTFILES_DIR/lib/state.sh" ]       && source "$DOTFILES_DIR/lib/state.sh"
 [ -f "$DOTFILES_DIR/lib/template.sh" ]    && source "$DOTFILES_DIR/lib/template.sh"
-[ -f "$DOTFILES_DIR/lib/plan.sh" ]        && source "$DOTFILES_DIR/lib/plan.sh"
 [ -f "$DOTFILES_DIR/lib/transaction.sh" ] && source "$DOTFILES_DIR/lib/transaction.sh"
 [ -f "$DOTFILES_DIR/lib/telemetry.sh" ]   && source "$DOTFILES_DIR/lib/telemetry.sh"
-[ "$PLAN_MODE" = 1 ] && plan_reset
 
 # Transaction log: track mutations so a failed install rolls back cleanly
 # instead of leaving the machine half-configured. Disabled in dry-run/plan,
@@ -257,10 +254,9 @@ install_status() {
   return "$drift"
 }
 
-# Announce dry-run / plan mode up front so the user knows nothing will be changed.
-if [ "$PLAN_MODE" = 1 ]; then
-  info "PLAN: capturing planned changes; nothing will be executed."
-elif [ "$DRY_RUN" = 1 ]; then
+# Announce dry-run mode up front so the user knows nothing will be changed
+# (--plan lands here too: it is a plain alias for --dry-run).
+if [ "$DRY_RUN" = 1 ]; then
   info "DRY-RUN: actions are announced, not executed."
 fi
 
@@ -450,14 +446,6 @@ if [ "$DRY_RUN" != 1 ] && command -v state_set >/dev/null 2>&1; then
 fi
 
 ok "Public setup done (profile: $PROFILE)."
-
-# Plan mode: emit the summary of recorded changes and exit before private overlays.
-if [ "$PLAN_MODE" = 1 ]; then
-  banner "Plan summary"
-  plan_summary
-  plan_cleanup
-  exit 0
-fi
 
 # Verify what the steps just applied (skipped in dry-run: nothing was changed).
 [ "$DRY_RUN" = 1 ] || verify_install || note "verification reported issues (see above)"
