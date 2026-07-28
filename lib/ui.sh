@@ -242,6 +242,7 @@ choose1() {  # choose1 "Header" opt...  → single choice (echoes the picked opt
       } >&2
       IFS= read -r reply </dev/tty 2>/dev/null || reply=""
       case "$reply" in ''|*[!0-9]*) reply=1 ;; esac
+      reply=$((10#$reply))   # "09" is decimal 9, not a bad octal literal
       { [ "$reply" -ge 1 ] && [ "$reply" -le "$#" ]; } || reply=1
       printf '%s\n' "${opts[reply-1]}"
     else

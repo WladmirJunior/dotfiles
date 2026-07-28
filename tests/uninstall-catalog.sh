@@ -23,16 +23,18 @@ printf 'ID=debian\n' > "$TMP/os-release-debian"
 
 # Keep-list mirror (capability -> package names across managers). Must match
 # UNINSTALL_KEEP_CAPABILITIES in uninstall.sh: shell git http-client
-# downloader node-runtime.
-KEEP="zsh git curl wget node nodejs npm"
+# downloader node-runtime apt-repositories command-not-found:dnf.
+KEEP="zsh git curl wget node nodejs npm software-properties-common"
+KEEP_DNF="PackageKit-command-not-found"
 
 # expected_removals MANAGER: catalog core+best-effort minus keep, one per line.
 expected_removals() {
-  local manager="$1" scope pkg out=""
+  local manager="$1" scope pkg out="" keep="$KEEP"
+  [ "$manager" = dnf ] && keep="$KEEP $KEEP_DNF"
   for scope in core best-effort; do
     for pkg in $(DOTFILES_DIR="$ROOT" bash -c \
       'source "$1/lib/packages/catalog.sh"; package_catalog "$2" "$3"' _ "$ROOT" "$scope" "$manager"); do
-      case " $KEEP " in *" $pkg "*) continue ;; esac
+      case " $keep " in *" $pkg "*) continue ;; esac
       case " $out "  in *" $pkg "*) continue ;; esac
       out="${out:+$out }$pkg"
     done

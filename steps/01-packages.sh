@@ -245,7 +245,12 @@ elif [ -z "$want_tmux" ] && [ "${DRY_RUN:-0}" != 1 ] \
     *,tmux,*) want_tmux=yes ;;
     *)
       want_tmux=no
-      state_set packages.tmux declined || true
+      # Persist the decline only when a human really answered: without gum or
+      # without a TTY, pick() silently returns its default, and recording that
+      # as a choice would suppress the question on future interactive runs.
+      if have_gum 2>/dev/null && { : </dev/tty; } 2>/dev/null; then
+        state_set packages.tmux declined || true
+      fi
       ;;
   esac
 fi

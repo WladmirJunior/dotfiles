@@ -18,5 +18,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 for test_file in "$ROOT"/tests/*.sh; do
   [ "$(basename "$test_file")" = run.sh ] && continue
+  echo "RUN $(basename "$test_file")"
   "$BASH" "$test_file"
 done

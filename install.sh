@@ -172,6 +172,12 @@ if [ "$DRY_RUN" != 1 ] && [ "$CHECK_ONLY" != 1 ] && [ "$STATUS_ONLY" != 1 ]; the
   fi
 fi
 export TX_ENABLED
+# Pin one quarantine dir for the whole run: the default embeds a timestamp, so
+# subshells resolving it independently could scatter one run across two dirs.
+if command -v setup_trash_dir >/dev/null 2>&1; then
+  SETUP_TRASH_DIR="$(setup_trash_dir)"
+  export SETUP_TRASH_DIR
+fi
 
 # Release the install lock (and, later in the script, the sudo keepalive) on
 # any exit path. Guarded with command -v because an early exit can happen

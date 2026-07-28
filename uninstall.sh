@@ -60,13 +60,18 @@ unlink_if() {  # unlink_if LINK EXPECTED_TARGET_FRAGMENT: remove only OUR symlin
   esac
 }
 
-# Keep-list, by catalog capability. These almost always predate the dotfiles or
-# are base-system dependencies; removing them would break the machine far
-# beyond what this repo installed:
+# Keep-list, by catalog capability (optionally scoped to one manager with
+# capability:manager). These almost always predate the dotfiles or are
+# base-system dependencies; removing them would break the machine far beyond
+# what this repo installed:
 #   shell (zsh: the login shell), git (other tools depend on it),
 #   http-client (curl), downloader (wget), node-runtime (node/nodejs/npm:
-#   global tooling outside this repo may rely on it).
-UNINSTALL_KEEP_CAPABILITIES="shell git http-client downloader node-runtime"
+#   global tooling outside this repo may rely on it),
+#   apt-repositories (software-properties-common ships add-apt-repository and
+#   predates us on Ubuntu; its removal also widens the autoremove sweep),
+#   command-not-found:dnf (PackageKit-command-not-found is Fedora Workstation
+#   stock; pacman's pkgfile stays removable, we installed it).
+UNINSTALL_KEEP_CAPABILITIES="shell git http-client downloader node-runtime apt-repositories command-not-found:dnf"
 
 # uninstall_packages MANAGER: core + best-effort catalog packages for MANAGER
 # minus the keep-list, space-separated in catalog order. Empty/failure output
@@ -76,6 +81,9 @@ uninstall_packages() {
   local manager="$1" keep="" cap scope pkg out=""
   command -v package_catalog >/dev/null 2>&1 || return 1
   for cap in $UNINSTALL_KEEP_CAPABILITIES; do
+    case "$cap" in
+      *:*) [ "${cap#*:}" = "$manager" ] || continue; cap="${cap%%:*}" ;;
+    esac
     keep="$keep $(package_for "$cap" "$manager" 2>/dev/null || true)"
   done
   for scope in core best-effort; do
