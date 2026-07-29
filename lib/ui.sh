@@ -261,7 +261,7 @@ pick() {  # pick "Header" opt...  → multi choice ([ ]/[x]); comma-joined or 'n
     [ -n "${PICK_SELECTED:-}" ] && sel_args=(--selected="$PICK_SELECTED")
     local out; out=$("$GUM" choose --no-limit --header="${PAD}$h  (space select · enter confirm)" \
       --cursor="${PAD}> " --cursor.foreground=$THEME_ACCENT --header.foreground=$THEME_PRIMARY \
-      --selected.foreground=$THEME_SUCCESS "${sel_args[@]}" \
+      --selected.foreground=$THEME_SUCCESS ${sel_args[@]+"${sel_args[@]}"} \
       --cursor-prefix="${PAD}[ ] " --unselected-prefix="${PAD}[ ] " --selected-prefix="${PAD}[x] " "$@" </dev/tty)
     PICK_SELECTED=""
     [ -z "$out" ] && { echo none; return; }; echo "$out" | paste -sd, -
