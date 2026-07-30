@@ -2,10 +2,10 @@
 # Recoverable removal helpers shared by installer maintenance and rollback.
 
 # Quarantine root: SETUP_TRASH_ROOT wins, then the shared agent quarantine root
-# (AGENT_QUARANTINE_DIR), with ~/.cli-trash as fallback. The per-run dir lives
+# (AGENT_QUARANTINE_DIR), with ~/.shell-trash as fallback. The per-run dir lives
 # under the "dotfiles-installer" segment because the installer runs on its own,
 # outside any AI CLI. SETUP_TRASH_DIR overrides the per-run dir outright.
-SETUP_TRASH_ROOT="${SETUP_TRASH_ROOT:-${AGENT_QUARANTINE_DIR:-$HOME/.cli-trash}}"
+SETUP_TRASH_ROOT="${SETUP_TRASH_ROOT:-${AGENT_QUARANTINE_DIR:-$HOME/.shell-trash}}"
 
 # setup_trash_dir: resolve (and print) this run's quarantine dir WITHOUT
 # creating it. The dir appears on disk only when something is actually moved

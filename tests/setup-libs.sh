@@ -81,4 +81,14 @@ maintenance_select component_installed WANT_APPS REMOVE_APPS "Applications" \
 [ "$REMOVE_APPS" = app-c ]
 [ "$(cat "$TMP/preselected")" = 'App A,App C' ]
 
+source "$ROOT/lib/setup/report.sh"
+DOTFILES_REPORT_FILE="$TMP/report"
+DOTFILES_REPORT_OWNER=test
+setup_report_add public packages unchanged 'already current'
+setup_report_step private apps 0 1 3
+setup_report_step nu certs 1 3 3 'certificate setup failed'
+grep -qx 'public|packages|unchanged|already current' "$TMP/report"
+grep -qx 'private|apps|changed|2 recorded change(s)' "$TMP/report"
+grep -qx 'nu|certs|failed|certificate setup failed' "$TMP/report"
+
 echo "Shared setup library tests passed."

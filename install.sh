@@ -24,13 +24,17 @@ REPO_REF="${DOTFILES_REF:-main}"        # branch/tag/sha to fetch (override via 
 CLONE_DIR="$HOME/.dotfiles"
 
 # Parse flags (any order) and keep the first non-flag arg as the profile.
-DRY_RUN=0; CHECK_ONLY=0; STATUS_ONLY=0; PROFILE_ARG=""
+DRY_RUN=0; CHECK_ONLY=0; STATUS_ONLY=0; MAINT_ACTION=""; PROFILE_ARG=""
 for arg in "$@"; do
   case "$arg" in
     --dry-run|-n) DRY_RUN=1 ;;
     --plan|-p)    DRY_RUN=1 ;;   # compatibility alias; no separate plan machinery
     --check)      CHECK_ONLY=1 ;;
     --status)     STATUS_ONLY=1 ;;
+    --manage)     MAINT_ACTION=manage ;;
+    --update)     MAINT_ACTION=update ;;
+    --refresh)    MAINT_ACTION=refresh ;;
+    --full)       MAINT_ACTION=full ;;
     -*)           echo "Unknown flag: $arg" >&2; exit 2 ;;
     *)            [ -z "$PROFILE_ARG" ] && PROFILE_ARG="$arg" ;;
   esac
@@ -139,6 +143,7 @@ source "$DOTFILES_DIR/lib/ui.sh"
 [ -f "$DOTFILES_DIR/lib/template.sh" ]    && source "$DOTFILES_DIR/lib/template.sh"
 [ -f "$DOTFILES_DIR/lib/transaction.sh" ] && source "$DOTFILES_DIR/lib/transaction.sh"
 [ -f "$DOTFILES_DIR/lib/telemetry.sh" ]   && source "$DOTFILES_DIR/lib/telemetry.sh"
+[ -f "$DOTFILES_DIR/lib/setup/report.sh" ] && source "$DOTFILES_DIR/lib/setup/report.sh"
 
 # Transaction log: track mutations so a failed install rolls back cleanly
 # instead of leaving the machine half-configured. Disabled in dry-run/plan and
@@ -298,9 +303,48 @@ if [ "$STATUS_ONLY" = 1 ]; then
   install_status; exit $?
 fi
 
+[ "$DRY_RUN" = 1 ] || { command -v setup_report_init >/dev/null 2>&1 && setup_report_init public; }
+
 # Fetch the gum fork before the first prompt/banner so the UI renders richly even
 # on a clean machine. Single source of truth for the gum binary lives in lib/ui.sh.
 ui_bootstrap_gum
+
+# A completed setup with no explicit profile is a maintenance run. Do not walk
+# through base packages, authentication and every overlay again. Let the user
+# choose the narrow operation, while --full or an explicit profile preserves
+# the complete bootstrap path.
+if [ -z "$PROFILE_ARG" ] && [ "$CHECK_ONLY" != 1 ] && [ "$STATUS_ONLY" != 1 ] \
+   && command -v state_is >/dev/null 2>&1 && state_is public.base complete; then
+  if [ -z "$MAINT_ACTION" ] && [ -r /dev/tty ] && command -v choose1 >/dev/null 2>&1; then
+    task "Maintenance · choose an action"
+    MAINT_ACTION="$(choose1 'Maintenance action' \
+      'manage · install or remove optional components' \
+      'update · update components already installed' \
+      'refresh · reapply the complete configuration' \
+      'full · run the complete bootstrap')"
+    MAINT_ACTION="${MAINT_ACTION%% *}"
+  fi
+  MAINT_ACTION="${MAINT_ACTION:-manage}"
+  if [[ "$MAINT_ACTION" = manage || "$MAINT_ACTION" = update ]]; then
+    private_installer="$HOME/.dotfiles-private/install.sh"
+    if [ -f "$private_installer" ]; then
+      banner "Maintenance · ${MAINT_ACTION}"
+      maintenance_rc=0
+      if [ "$MAINT_ACTION" = update ]; then
+        bash "$private_installer" --update || maintenance_rc=$?
+      else
+        bash "$private_installer" --manage || maintenance_rc=$?
+      fi
+      command -v setup_report_add >/dev/null 2>&1 \
+        && setup_report_add public maintenance \
+          "$([ "$maintenance_rc" -eq 0 ] && echo completed || echo failed)" \
+          "$MAINT_ACTION"
+      command -v setup_report_finish >/dev/null 2>&1 && setup_report_finish public
+      exit "$maintenance_rc"
+    fi
+    note "private overlay is not installed; continuing with the complete bootstrap"
+  fi
+fi
 
 # Welcome banner.
 if have_gum; then
@@ -404,6 +448,7 @@ abort_install() {
     note "no transaction log to roll back; inspect the partial state manually." 2>/dev/null \
       || echo "no transaction log; inspect partial state manually." >&2
   fi
+  command -v setup_report_finish >/dev/null 2>&1 && setup_report_finish public
   exit "$rc"
 }
 
@@ -431,12 +476,16 @@ while IFS= read -r step <&3; do
   # install moves on. Capture the step's real exit code directly (a `if ! cmd`
   # would mask it as 1).
   step_started_at="$(date +%s)"
+  report_before="$(setup_report_count "${TX_LOG:-}" 2>/dev/null || echo 0)"
   step_execute "$DOTFILES_DIR/steps/$step"
   step_rc=$?
+  report_after="$(setup_report_count "${TX_LOG:-}" 2>/dev/null || echo 0)"
   # Best-effort run telemetry: recorded before the abort check so a failing
   # step still gets its line; never fails the install (see lib/telemetry.sh).
   command -v telemetry_record_step >/dev/null 2>&1 && telemetry_record_step \
     "$step" "$step_rc" "$(( $(date +%s) - step_started_at ))" "$INSTALL_RUN_MODE" "$OS_TYPE"
+  command -v setup_report_step >/dev/null 2>&1 \
+    && setup_report_step public "$step" "$step_rc" "$report_before" "$report_after"
   if [ "$step_rc" -ne 0 ]; then
     step_status=""
     command -v step_status_label >/dev/null 2>&1 \
@@ -755,4 +804,5 @@ fi
 # Explicit success exit. Without it the script's exit code is that of the last
 # command run, which on Linux is a false `[ "$OS_TYPE" = "Darwin" ]` test (-> 1),
 # making a fully-successful install look like a failure to any caller checking $?.
+command -v setup_report_finish >/dev/null 2>&1 && setup_report_finish public || true
 exit 0

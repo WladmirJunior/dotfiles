@@ -25,14 +25,14 @@ echo "[02] Shell (fzf, zsh plugins)..."
 # zshrc already sources ~/.fzf.zsh, so the rc edit is redundant anyway.
 if [ "$OS_TYPE" = "Darwin" ]; then
   [ "${DRY_RUN:-0}" != 1 ] && tx_created_path "$HOME/.fzf.zsh"
-  run "$(brew --prefix)/opt/fzf/install" --key-bindings --completion --no-update-rc --no-bash --no-fish
+  run "$(brew --prefix)/opt/fzf/install" --key-bindings --completion --no-update-rc --no-bash --no-fish --no-nushell
 else
   # `|| true`: no fzf installer found is a valid outcome (the elif/else below
   # handle it); under pipefail the empty grep would otherwise abort the step.
   FZF_INSTALL=$(find /usr/share -name install.sh 2>/dev/null | grep fzf | head -n 1 || true)
   if [ -n "$FZF_INSTALL" ]; then
     [ "${DRY_RUN:-0}" != 1 ] && tx_created_path "$HOME/.fzf.zsh"
-    run bash "$FZF_INSTALL" --key-bindings --completion --no-update-rc --no-bash --no-fish
+    run bash "$FZF_INSTALL" --key-bindings --completion --no-update-rc --no-bash --no-fish --no-nushell
   elif fzf --zsh >/dev/null 2>&1; then
     if [ "${DRY_RUN:-0}" = 1 ]; then echo "[dry-run] fzf --zsh > ~/.fzf.zsh"; else
       tx_created_path "$HOME/.fzf.zsh"

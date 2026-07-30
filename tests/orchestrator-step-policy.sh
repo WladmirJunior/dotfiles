@@ -113,6 +113,22 @@ printf 'public.base=complete\n' > "$TMP/state-maint/dotfiles/setup.state"
 run_install maint '20-optfail.sh optional'
 grep -q '"mode":"maintenance"' "$TMP/state-maint/dotfiles/runs.jsonl"
 
+# A normal rerun routes directly to narrow maintenance instead of replaying
+# the public profile, authentication and every overlay step.
+mkdir -p "$TMP/state-routing/dotfiles" "$FAKE_HOME/.dotfiles-private"
+printf 'public.base=complete\n' > "$TMP/state-routing/dotfiles/setup.state"
+cat > "$FAKE_HOME/.dotfiles-private/install.sh" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" > "$PRIVATE_ARGS"
+SH
+chmod +x "$FAKE_HOME/.dotfiles-private/install.sh"
+HOME="$FAKE_HOME" PATH="$TMP/bin:/usr/bin:/bin" XDG_DATA_HOME="$TMP/data" \
+  XDG_STATE_HOME="$TMP/state-routing" TX_LOG="$TMP/tx-routing.jsonl" \
+  TX_LOCK_DIR="$TMP/tx-routing.jsonl.lock" SETUP_TRASH_ROOT="$TMP/trash-root" \
+  PRIVATE_ARGS="$TMP/private.args" \
+  bash "$REPO/install.sh" --manage > "$TMP/routing.out" 2>&1
+grep -qx -- '--manage' "$TMP/private.args"
+
 # ── Telemetry is best-effort: an unwritable log never fails the install ──────
 mkdir -p "$TMP/state-broken/dotfiles/runs.jsonl"   # a DIRECTORY at the log path
 run_install broken '20-optfail.sh optional' || {

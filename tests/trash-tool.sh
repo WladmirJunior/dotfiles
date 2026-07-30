@@ -9,6 +9,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# The shared default is shell-owned and independent of any specific AI CLI.
+HOME="$TMP/home-default" bash -c '
+  unset SETUP_TRASH_ROOT AGENT_QUARANTINE_DIR
+  source "$1/lib/trash.sh"
+  [ "$SETUP_TRASH_ROOT" = "$HOME/.shell-trash" ]
+' _ "$ROOT"
+
 export SETUP_TRASH_ROOT="$TMP/trash-root"
 BASE="$SETUP_TRASH_ROOT/dotfiles-installer"
 

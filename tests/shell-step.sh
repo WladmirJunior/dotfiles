@@ -36,6 +36,7 @@ grep -Fq -- '--no-update-rc' <<<"$output" || {
   exit 1
 }
 grep -Fq -- '--key-bindings --completion' <<<"$output"
+grep -Fq -- '--no-nushell' <<<"$output"
 if grep -Fq -- '--all' <<<"$output"; then
   echo "fzf install still uses --all (it appends to ~/.zshrc outside the journal)" >&2
   exit 1

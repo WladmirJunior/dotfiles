@@ -280,14 +280,15 @@ confirm() {  # confirm "Question"  → exit status (yes=0)
 # so the first data row isn't treated as a header. Without the fork: a plain gum
 # table. Without gum at all: column(1).
 summary_table() {
+  local columns="${1:-Component,Selection}" widths="${2:-22,40}"
   if have_gum && gum_has_width; then
     "$GUM" table -p --separator="|" --border double --border-row \
       --border.foreground=$THEME_BORDER --selected.foreground=$THEME_VALUE --selected.bold=false \
-      --columns "Component,Selection" --width "$(( $(cwidth) + 2 ))"
+      --columns "$columns" --width "$(( $(cwidth) + 2 ))"
   elif have_gum; then
     "$GUM" table -p --separator="|" --border double --border.foreground=$THEME_BORDER \
-      --columns "Component,Selection" --widths 22,40
-  else column -t -s'|'; fi
+      --columns "$columns" --widths "$widths"
+  else { printf '%s\n' "${columns//,/|}"; cat; } | column -t -s'|'; fi
   return 0
 }
 
