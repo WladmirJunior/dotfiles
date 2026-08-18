@@ -17,15 +17,16 @@ brew_cask_installed() {
 # Results are exposed through BREW_MISSING and BREW_UPGRADE as space-separated
 # package identifiers. Formula identifiers cannot contain spaces.
 brew_plan_formulae() {
-  local outdated pkg name
+  local outdated pinned pkg name
   BREW_MISSING=""
   BREW_UPGRADE=""
   outdated="$(brew outdated --formula --quiet 2>/dev/null || true)"
+  pinned="$(brew list --pinned 2>/dev/null || true)"
   for pkg in "$@"; do
     name="$(brew_formula_name "$pkg")"
     if ! brew_formula_installed "$pkg"; then
       BREW_MISSING="${BREW_MISSING:+$BREW_MISSING }$pkg"
-    elif grep -qxF "$name" <<<"$outdated"; then
+    elif grep -qxF "$name" <<<"$outdated" && ! grep -qxF "$name" <<<"$pinned"; then
       BREW_UPGRADE="${BREW_UPGRADE:+$BREW_UPGRADE }$pkg"
     fi
   done
