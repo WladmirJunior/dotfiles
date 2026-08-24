@@ -2,6 +2,16 @@
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="$PATH:/usr/local/bin"
 
+# Homebrew is not on the default PATH, so non-interactive and fresh login
+# shells (mosh, ssh) lose every brew binary without this.
+for __brew in /opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew; do
+  if [ -x "$__brew" ]; then
+    eval "$("$__brew" shellenv)"
+    break
+  fi
+done
+unset __brew
+
 # Default terminal editor for CLI tools such as Yazi, Git, and crontab.
 export EDITOR='nvim'
 export VISUAL="$EDITOR"
