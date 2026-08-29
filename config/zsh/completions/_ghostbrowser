@@ -1,0 +1,118 @@
+#compdef ghostbrowser
+#
+# Profile names come from `ghostbrowser profiles --plain` (name<TAB>site) and
+# are cached, because parsing profiles.toml costs ~40ms per keystroke. The
+# cache is rebuilt only when profiles.toml is newer than it, so adding a
+# profile pays that cost once.
+
+_ghostbrowser_cache_file() {
+  print -r -- "${XDG_CACHE_HOME:-$HOME/.cache}/ghostbrowser/completion-profiles"
+}
+
+_ghostbrowser_profiles_source() {
+  print -r -- "${GHOSTBROWSER_CONFIG_DIR:-$HOME/.config/ghostbrowser}/profiles.toml"
+}
+
+_ghostbrowser_refresh_cache() {
+  local cache=$(_ghostbrowser_cache_file)
+  local source=$(_ghostbrowser_profiles_source)
+  [[ -f $source ]] || return 1
+  # -nt is false when the cache is missing, so this covers the cold start too.
+  if [[ ! -f $cache || $source -nt $cache ]]; then
+    mkdir -p ${cache:h} || return 1
+    local tmp=$cache.$$
+    if ghostbrowser profiles --plain >| $tmp 2>/dev/null && [[ -s $tmp ]]; then
+      mv -f $tmp $cache
+    else
+      rm -f $tmp
+      return 1
+    fi
+  fi
+  return 0
+}
+
+_ghostbrowser_profile_names() {
+  local -a entries
+  local cache=$(_ghostbrowser_cache_file)
+  if _ghostbrowser_refresh_cache && [[ -f $cache ]]; then
+    local line name site
+    while IFS=$'\t' read -r name site; do
+      [[ -n $name ]] || continue
+      entries+=( "${name}:${site}" )
+    done < $cache
+  fi
+  _describe -t profiles 'profile' entries
+}
+
+_ghostbrowser() {
+  local curcontext=$curcontext state line
+  typeset -A opt_args
+
+  _arguments -C \
+    '1: :->command' \
+    '*:: :->args'
+
+  case $state in
+    command)
+      local -a commands
+      commands=(
+        'open:start or reuse a headful browser for a profile'
+        'fetch:read a page headless with the profile session'
+        'login:open the profile login page'
+        'session:show resolved dir, port and running state'
+        'stop:close the browser owned by a profile'
+        'profiles:list profiles, grouped; TERM filters by name or site'
+        'personas:list 1Password items tagged ghostbrowser'
+        'daemon:start|status|stop|restart the ghostbrowserd daemon'
+        'find:locate elements semantically'
+        'observe:read DOM deltas'
+        'act:click, fill, type or press on a ref'
+        'extract:pull structured data from a selector'
+        'api:raw semantic API call'
+        'browser-do:low-level CDP action'
+        'save-session:store the browser session in 1Password'
+        'import-session:restore a session from another profile dir'
+        'forget:quarantine a local profile dir'
+        'tor-stop:stop the on-demand tor daemon'
+      )
+      _describe -t commands 'ghostbrowser command' commands
+      ;;
+    args)
+      case $words[1] in
+        daemon)
+          local -a actions
+          actions=(
+            'start:start the daemon'
+            'status:0 running, 1 stopped, 2 unreachable'
+            'stop:shut the daemon down'
+            'restart:stop then start'
+          )
+          _describe -t actions 'daemon action' actions
+          ;;
+        profiles)
+          _ghostbrowser_profile_names
+          ;;
+        fetch)
+          # fetch <profile> <url>
+          if (( CURRENT == 2 )); then
+            _ghostbrowser_profile_names
+          else
+            _urls
+          fi
+          ;;
+        open|login|session|stop|save-session|import-session|forget|find|observe|act|extract)
+          if (( CURRENT == 2 )); then
+            _ghostbrowser_profile_names
+          else
+            _default
+          fi
+          ;;
+        *)
+          _default
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_ghostbrowser "$@"

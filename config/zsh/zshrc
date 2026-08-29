@@ -102,6 +102,8 @@ zle -N sudo-command-line
 bindkey '\e\e' sudo-command-line
 
 # ─────────────────────────── Completion & Plugins ───────────────────────────
+# Custom completions must join fpath before compinit or they are never loaded.
+fpath=(~/.dotfiles/config/zsh/completions $fpath)
 autoload -Uz compinit
 if [[ -n ~/.zcompdump(#qN.mh+24) ]]; then
     compinit
