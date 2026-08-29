@@ -557,7 +557,7 @@ apply_private_overlay() {
   # The overlay repo, and therefore its local dir name, comes from the
   # 1Password bootstrap note; no overlay name is hardcoded in this file.
   local private_repo private_dir
-  private_repo="$(op item get dotfiles-bootstrap --vault Personal \
+  private_repo="$(op item get dotfiles-bootstrap --vault Private \
     --fields private_repo 2>/dev/null)" || return 1
   [ -n "$private_repo" ] || return 1
   private_dir="$HOME/.$(basename "${private_repo%.git}")"

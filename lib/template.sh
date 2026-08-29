@@ -13,7 +13,7 @@
 # Syntax in .tmpl files:
 #   ${VAR_NAME}                  — variable expansion (envsubst-style)
 #   ${VAR_NAME:-default}         — variable with default
-#   ${OP:op://Personal/foo/bar}  — read secret from 1Password CLI
+#   ${OP:op://Private/foo/bar}  — read secret from 1Password CLI
 #   # @if VAR_NAME               — start conditional block (truthy: 1/true/yes)
 #   # @if VAR_NAME == "value"    — start conditional block (equality)
 #   # @endif                     — end conditional block

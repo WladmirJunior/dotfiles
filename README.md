@@ -85,7 +85,7 @@ private / nu repos. See `lib/template.sh`:
 ```
 ${VAR}                    expand env var
 ${VAR:-default}           expand with fallback
-${OP:op://Personal/...}   read secret from 1Password
+${OP:op://Private/...}   read secret from 1Password
 # @if IS_WORK_MAC         conditional block (truthy)
 # @if FOO == "value"      conditional block (equality)
 # @endif                  end block
