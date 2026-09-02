@@ -86,7 +86,10 @@ if (Get-Command zoxide -ErrorAction SilentlyContinue) {
 
 # -------------------------------- PSReadLine --------------------------------
 if (Get-Module -ListAvailable -Name PSReadLine) {
-    Set-PSReadLineOption -HistoryNoDuplicates -PredictionSource History -PredictionViewStyle ListView -ErrorAction SilentlyContinue
+    Set-PSReadLineOption -HistoryNoDuplicates -ErrorAction SilentlyContinue
+    if ($Host.UI.SupportsVirtualTerminal -and -not [Console]::IsOutputRedirected) {
+        Set-PSReadLineOption -PredictionSource History -PredictionViewStyle ListView -ErrorAction SilentlyContinue
+    }
     Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
 }
 

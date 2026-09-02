@@ -354,6 +354,47 @@ if (-not (Test-Path $devDir)) {
 Write-Section "shell (pwsh profile)"
 New-DotfilesLink -Target (Join-Path $DotfilesDir 'windows\profile.ps1') -Link $PROFILE.CurrentUserCurrentHost
 
+# Keep new Windows Terminal tabs predictable. Without an explicit starting
+# directory, launches can inherit the installer's working directory.
+function Set-WindowsTerminalDefault {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $settingsPaths = @(
+        (Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'),
+        (Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json'),
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\Windows Terminal\settings.json')
+    )
+    $pwshGuid = '{574e775e-4f2a-5b96-ac1e-a2962a402336}'
+
+    foreach ($settingsPath in $settingsPaths) {
+        if (-not (Test-Path $settingsPath)) { continue }
+        $settings = Get-Content -Raw $settingsPath | ConvertFrom-Json
+        $startProperty = $settings.profiles.defaults.PSObject.Properties['startingDirectory']
+        $currentStart = if ($startProperty) { $startProperty.Value } else { $null }
+        if ($settings.defaultProfile -eq $pwshGuid -and $currentStart -eq '%USERPROFILE%') {
+            Write-Note "Windows Terminal defaults already configured"
+            continue
+        }
+        if (-not $PSCmdlet.ShouldProcess($settingsPath, 'set PowerShell 7 and %USERPROFILE% as defaults')) {
+            continue
+        }
+        Copy-Item $settingsPath "$settingsPath.bak-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        $settings.defaultProfile = $pwshGuid
+        if (-not $settings.profiles.defaults.PSObject.Properties['startingDirectory']) {
+            $settings.profiles.defaults | Add-Member -NotePropertyName startingDirectory -NotePropertyValue '%USERPROFILE%'
+        }
+        else {
+            $settings.profiles.defaults.startingDirectory = '%USERPROFILE%'
+        }
+        $json = $settings | ConvertTo-Json -Depth 100
+        [IO.File]::WriteAllText($settingsPath, "$json`n", [Text.UTF8Encoding]::new($false))
+        Write-Ok "Windows Terminal starts PowerShell 7 in %USERPROFILE%"
+    }
+}
+
+Set-WindowsTerminalDefault
+
 # --------------------------------------------------------------------------
 #  Phase 4 - 1Password SSH agent + gh
 # --------------------------------------------------------------------------
