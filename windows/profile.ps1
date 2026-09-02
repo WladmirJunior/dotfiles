@@ -27,6 +27,21 @@ if (Get-Command tldr -ErrorAction SilentlyContinue) {
     function help { tldr @args }
 }
 
+# Yazi that returns its final directory to the shell (like the zshrc `y`).
+if (Get-Command yazi -ErrorAction SilentlyContinue) {
+    function y {
+        $tmp = New-TemporaryFile
+        try {
+            yazi @args --cwd-file="$tmp"
+            $cwd = Get-Content -Raw $tmp -ErrorAction SilentlyContinue
+            if ($cwd -and $cwd.Trim() -and $cwd.Trim() -ne $PWD.Path) {
+                Set-Location $cwd.Trim()
+            }
+        }
+        finally { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 # ----------------------------------- Git ------------------------------------
 function gst   { git status @args }
 function ga    { git add @args }

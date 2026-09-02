@@ -180,6 +180,62 @@ function Install-WingetPackage {
     }
 }
 
+function Install-Yazi {
+    # yazi has no stable winget package. Install the verified official Windows
+    # release into ~/.local/bin, mirroring scripts/install-github-release.sh:
+    # pick the asset from the latest release, check its published SHA-256, extract.
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $binDir = Join-Path $HOME '.local\bin'
+    if ((Get-Command yazi -ErrorAction SilentlyContinue) -or
+        (Test-Path (Join-Path $binDir 'yazi.exe'))) {
+        Write-Note "yazi already installed"
+        return
+    }
+    if (-not $PSCmdlet.ShouldProcess('sxyazi/yazi', 'download verified release')) { return }
+
+    $asset = 'yazi-x86_64-pc-windows-msvc.zip'
+    try {
+        $rel = Invoke-RestMethod 'https://api.github.com/repos/sxyazi/yazi/releases/latest' `
+            -Headers @{ 'User-Agent' = 'dotfiles-install' } -ErrorAction Stop
+        $a = @($rel.assets | Where-Object name -EQ $asset)
+        if ($a.Count -ne 1) { throw "expected one $asset asset, found $($a.Count)" }
+        $digest = "$($a[0].digest)"
+        if (-not $digest.StartsWith('sha256:')) { throw "release asset has no SHA-256 digest" }
+        $expected = $digest.Substring(7)
+        $url = $a[0].browser_download_url
+        if ($url -notlike 'https://github.com/sxyazi/yazi/releases/download/*') {
+            throw "unexpected download URL: $url"
+        }
+
+        $tmp = Join-Path $env:TEMP "yazi-$([guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+        $zip = Join-Path $tmp $asset
+        Write-Step "downloading yazi $($rel.tag_name)"
+        Invoke-WebRequest $url -OutFile $zip -ErrorAction Stop
+
+        $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+        if ($actual -ne $expected.ToLower()) { throw "SHA-256 mismatch for $asset" }
+
+        Expand-Archive -Path $zip -DestinationPath $tmp -Force
+        New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+        Get-ChildItem $tmp -Recurse -Include 'yazi.exe', 'ya.exe' |
+            ForEach-Object { Copy-Item $_.FullName (Join-Path $binDir $_.Name) -Force }
+        Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+
+        if (Test-Path (Join-Path $binDir 'yazi.exe')) {
+            Write-Ok "yazi $($rel.tag_name) at $binDir"
+        }
+        else {
+            Write-Warn2 "yazi archive had no yazi.exe; layout changed?"
+        }
+    }
+    catch {
+        Write-Warn2 "yazi install failed: $_"
+    }
+}
+
 if ($SkipPackages) {
     Write-Section "packages (skipped)"
 }
@@ -192,7 +248,8 @@ else {
         $id, $bin = $Packages[$cap]
         Install-WingetPackage -Id $id -Binary $bin
     }
-    Write-Note "yazi and gum are not on winget; install manually if wanted (see windows/README.md)"
+    Install-Yazi
+    Write-Note "gum is not ported (installer UI); install manually if wanted (see windows/README.md)"
     # Append the persisted Machine/User PATH so later phases see freshly
     # installed tools, without dropping entries only this process has.
     $persisted = @(
@@ -306,7 +363,10 @@ function Invoke-AuthPhase {
 
     Write-Section "connect and authenticate (1Password, SSH, gh)"
 
-    $opApp = [bool](Get-AppxPackage -Name AgileBits.1Password -ErrorAction SilentlyContinue)
+    # Detect the desktop app by its WindowsApps install dir (Get-AppxPackage
+    # pulls in a compat shim that floods -WhatIf output with alias noise).
+    $opApp = [bool](Get-ChildItem "$env:ProgramFiles\WindowsApps" -Filter 'AgileBits.1Password_*' `
+            -Directory -ErrorAction SilentlyContinue)
     if (-not $opApp -and $hasWinget) {
         if ($PSCmdlet.ShouldProcess('AgileBits.1Password', 'winget install')) {
             winget install --id AgileBits.1Password --exact --silent `
@@ -343,27 +403,47 @@ function Invoke-AuthPhase {
         Write-Warn2 "No SSH agent pipe. Enable the 1Password SSH agent and reopen this shell."
     }
 
-    # gh via the op shell plugin (mirrors install.sh 673-689).
+    # gh auth via 1Password. `op plugin` (the shell-plugin mechanism used by
+    # install.sh on macOS/Linux) is not supported on Windows
+    # (1Password/shell-plugins#403). Instead, resolve a GitHub PAT from the
+    # vault into $env:GH_TOKEN at shell start: gh reads GH_TOKEN before any
+    # on-disk config, so nothing is written to ~/.config/gh/hosts.yml.
     if (Get-Command op -ErrorAction SilentlyContinue) {
-        Write-Step "op plugin init gh"
-        if (-not $WhatIfPreference) {
-            op plugin init gh
-        }
-        $opPlugins = Join-Path $HOME '.config\op\plugins.ps1'
         $localProfile = Join-Path $HOME '.pwsh_profile.local'
-        $sourceLine = ". `"$opPlugins`""
-        if (-not (Test-Path $localProfile) -or
-            -not (Select-String -Path $localProfile -SimpleMatch 'op\plugins.ps1' -Quiet)) {
-            if ($PSCmdlet.ShouldProcess($localProfile, 'add op plugin source line')) {
-                Add-Content $localProfile $sourceLine
-                Write-Ok "gh plugin wired into ~/.pwsh_profile.local"
+        $marker = 'GH_TOKEN'
+        if ((Test-Path $localProfile) -and
+            (Select-String -Path $localProfile -SimpleMatch $marker -Quiet)) {
+            Write-Note "GH_TOKEN wiring already in ~/.pwsh_profile.local"
+        }
+        elseif ($WhatIfPreference) {
+            Write-Note "would prompt for a GitHub PAT secret reference and wire GH_TOKEN"
+        }
+        else {
+            $ref = Read-Host "1Password secret reference for the GitHub PAT (blank to skip)"
+            if ($ref) {
+                if (-not ($ref -like 'op://*')) {
+                    Write-Warn2 "expected an op://Vault/Item/field reference; skipping"
+                }
+                elseif ($PSCmdlet.ShouldProcess($localProfile, 'add GH_TOKEN wiring')) {
+                    $block = @(
+                        ''
+                        '# gh authenticates via a GitHub PAT read from 1Password (no token on disk).'
+                        "`$env:GH_TOKEN = (op read `"$ref`" 2>`$null)"
+                    )
+                    Add-Content $localProfile $block
+                    Write-Ok "GH_TOKEN wired into ~/.pwsh_profile.local"
+                }
+            }
+            else {
+                Write-Note "skipped gh wiring; add it later to ~/.pwsh_profile.local:"
+                Write-Host  '       $env:GH_TOKEN = (op read "op://<vault>/<item>/<field>")'
             }
         }
         $ghHosts = Join-Path $HOME '.config\gh\hosts.yml'
         Remove-Item $ghHosts -ErrorAction SilentlyContinue   # no on-disk gh creds
     }
     else {
-        Write-Warn2 "op CLI not found; install it (winget install AgileBits.1Password.CLI) and run 'op plugin init gh'"
+        Write-Warn2 "op CLI not found; install it (winget install AgileBits.1Password.CLI)"
     }
 
     Write-Note "Private overlay (sonus, ai-cli-configs) is macOS/Linux only; not applied here."
