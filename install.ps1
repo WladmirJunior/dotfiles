@@ -1,0 +1,404 @@
+#Requires -Version 7
+<#
+.SYNOPSIS
+  Dotfiles installer for Windows (native PowerShell 7).
+
+.DESCRIPTION
+  Standalone counterpart of install.sh for Windows. Runs four phases:
+    1. packages  - CLI tools via winget
+    2. dotfiles  - symlink nvim / git configs
+    3. shell     - symlink windows/profile.ps1 to the pwsh profile
+    4. auth      - wire up the 1Password SSH agent and the gh 1Password plugin
+
+  It does NOT cover sonus, ai-cli-configs, agent memory or the private overlay;
+  those stay macOS/Linux only. No transaction journal: each step backs up any
+  pre-existing target to <path>.bak-<timestamp> and is idempotent.
+
+.PARAMETER SkipPackages
+  Skip phase 1 (winget installs).
+
+.PARAMETER SkipAuth
+  Skip phase 4 (1Password / gh).
+
+.PARAMETER Repo
+  owner/repo to self-clone from when run via `iwr ... | iex`.
+
+.EXAMPLE
+  iwr -useb https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/install.ps1 | iex
+
+.EXAMPLE
+  pwsh -File ~/.dotfiles/install.ps1 -WhatIf
+  pwsh -File ~/.dotfiles/install.ps1 -SkipAuth
+#>
+[CmdletBinding(SupportsShouldProcess)]
+param(
+    [switch]$SkipPackages,
+    [switch]$SkipAuth,
+    [string]$Repo = 'WladmirJunior/dotfiles'
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+
+# --------------------------------------------------------------------------
+#  Output helpers (no gum; plain colored Write-Host, mirrors lib/ui.sh intent)
+# --------------------------------------------------------------------------
+function Write-Section { param([string]$Text) Write-Host "`n=== $Text ===" -ForegroundColor Cyan }
+function Write-Step    { param([string]$Text) Write-Host "  - $Text" -ForegroundColor White }
+function Write-Ok      { param([string]$Text) Write-Host "  OK $Text" -ForegroundColor Green }
+function Write-Note    { param([string]$Text) Write-Host "  .. $Text" -ForegroundColor DarkGray }
+function Write-Warn2   { param([string]$Text) Write-Host "  !! $Text" -ForegroundColor Yellow }
+
+# --------------------------------------------------------------------------
+#  Phase 0 - guards and detection
+# --------------------------------------------------------------------------
+if (-not $IsWindows) {
+    throw 'install.ps1 is Windows-only. On macOS/Linux use install.sh.'
+}
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    throw 'PowerShell 7+ is required. Install it: winget install --id Microsoft.PowerShell'
+}
+
+$DotfilesDir = Join-Path $HOME '.dotfiles'
+
+# Resolve where this script lives. Run via `iwr | iex` there is no $PSCommandPath:
+# self-fetch into ~/.dotfiles and re-exec from there.
+function Get-RepoRoot {
+    if ($PSCommandPath) {
+        return (Split-Path -Parent $PSCommandPath)
+    }
+    return $null
+}
+
+function Initialize-Clone {
+    param([string]$Target, [string]$RepoSlug)
+
+    if (Test-Path (Join-Path $Target '.git')) {
+        Write-Note "repo already at $Target"
+        return
+    }
+    if (Test-Path $Target) {
+        throw "$Target exists but is not a git checkout. Move it aside and retry."
+    }
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        Write-Step "cloning $RepoSlug -> $Target"
+        git clone "https://github.com/$RepoSlug.git" $Target
+        if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
+        return
+    }
+    # No git yet: download the source tarball (mirrors install.sh 96-125).
+    Write-Step "git not found; downloading $RepoSlug tarball"
+    $zip = Join-Path $env:TEMP "dotfiles-$([guid]::NewGuid().ToString('N')).zip"
+    Invoke-WebRequest "https://codeload.github.com/$RepoSlug/zip/refs/heads/main" -OutFile $zip
+    $tmp = Join-Path $env:TEMP "dotfiles-x-$([guid]::NewGuid().ToString('N'))"
+    Expand-Archive -Path $zip -DestinationPath $tmp -Force
+    $inner = Get-ChildItem $tmp -Directory | Select-Object -First 1
+    Move-Item $inner.FullName $Target
+    Remove-Item $zip, $tmp -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$repoRoot = Get-RepoRoot
+if (-not $repoRoot) {
+    # Bootstrapped via iex.
+    Initialize-Clone -Target $DotfilesDir -RepoSlug $Repo
+    & (Join-Path $DotfilesDir 'install.ps1') @PSBoundParameters
+    return
+}
+if ($repoRoot -ne $DotfilesDir) {
+    if (Test-Path $DotfilesDir) {
+        throw "This clone is at $repoRoot but $DotfilesDir already exists. Remove one."
+    }
+    Write-Step "moving clone from $repoRoot to $DotfilesDir"
+    Move-Item $repoRoot $DotfilesDir
+    & (Join-Path $DotfilesDir 'install.ps1') @PSBoundParameters
+    return
+}
+
+Write-Section "dotfiles - Windows native setup"
+Write-Note "repo: $DotfilesDir"
+
+$hasWinget = [bool](Get-Command winget -ErrorAction SilentlyContinue)
+if (-not $hasWinget) {
+    Write-Warn2 "winget not found. Install 'App Installer' from the Microsoft Store, then re-run for phase 1."
+}
+
+# --------------------------------------------------------------------------
+#  Phase 1 - packages (winget)
+# --------------------------------------------------------------------------
+# capability -> [winget id, binary that proves it is installed]
+$Packages = [ordered]@{
+    git            = @('Git.Git',                'git')
+    editor         = @('Neovim.Neovim',          'nvim')
+    'fuzzy-finder' = @('junegunn.fzf',           'fzf')
+    'dir-jump'     = @('ajeetdsouza.zoxide',     'zoxide')
+    'enhanced-ls'  = @('eza-community.eza',      'eza')
+    'file-viewer'  = @('sharkdp.bat',            'bat')
+    'text-search'  = @('BurntSushi.ripgrep.MSVC','rg')
+    'file-find'    = @('sharkdp.fd',             'fd')
+    'git-diff'     = @('dandavison.delta',       'delta')
+    'node-runtime' = @('OpenJS.NodeJS.LTS',      'node')
+    'github-cli'   = @('GitHub.cli',             'gh')
+    'system-info'  = @('Fastfetch-cli.Fastfetch','fastfetch')
+    json           = @('jqlang.jq',              'jq')
+    archive        = @('7zip.7zip',              '7z')
+    'manual-pages' = @('tldr-pages.tlrc',        'tldr')
+}
+
+function Install-WingetPackage {
+    [CmdletBinding(SupportsShouldProcess)]
+    param([string]$Id, [string]$Binary)
+
+    if (Get-Command $Binary -ErrorAction SilentlyContinue) {
+        Write-Note "$Binary already installed"
+        return
+    }
+    if (-not $PSCmdlet.ShouldProcess($Id, 'winget install')) { return }
+
+    # winget can hang without a console; cap it and keep going on failure.
+    $job = Start-Job -ScriptBlock {
+        winget install --id $using:Id --exact --silent --disable-interactivity `
+            --accept-package-agreements --accept-source-agreements 2>&1 | Out-String
+    }
+
+    if (Wait-Job $job -Timeout 300) {
+        $out = Receive-Job $job
+        Remove-Job $job
+        if (Get-Command $Binary -ErrorAction SilentlyContinue) {
+            Write-Ok "$Binary ($Id)"
+        }
+        elseif ($out -match 'No package found|No installer|not found') {
+            Write-Warn2 "$Id not in winget; install $Binary manually"
+        }
+        else {
+            Write-Ok "$Id installed (open a new shell for '$Binary' on PATH)"
+        }
+    }
+    else {
+        Stop-Job $job; Remove-Job $job -Force
+        Write-Warn2 "$Id install timed out; skipping"
+    }
+}
+
+if ($SkipPackages) {
+    Write-Section "packages (skipped)"
+}
+elseif (-not $hasWinget) {
+    Write-Section "packages (skipped - winget missing)"
+}
+else {
+    Write-Section "packages (winget)"
+    foreach ($cap in $Packages.Keys) {
+        $id, $bin = $Packages[$cap]
+        Install-WingetPackage -Id $id -Binary $bin
+    }
+    Write-Note "yazi and gum are not on winget; install manually if wanted (see windows/README.md)"
+    # Append the persisted Machine/User PATH so later phases see freshly
+    # installed tools, without dropping entries only this process has.
+    $persisted = @(
+        [Environment]::GetEnvironmentVariable('PATH', 'Machine')
+        [Environment]::GetEnvironmentVariable('PATH', 'User')
+    ) -join ';'
+    $current = $env:PATH -split ';'
+    foreach ($p in $persisted -split ';') {
+        if ($p -and $current -notcontains $p) { $env:PATH += ";$p" }
+    }
+}
+
+# --------------------------------------------------------------------------
+#  Phase 2 - dotfiles (symlinks)
+# --------------------------------------------------------------------------
+function New-DotfilesLink {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)][string]$Target,
+        [Parameter(Mandatory)][string]$Link
+    )
+
+    if (-not (Test-Path $Target)) {
+        Write-Warn2 "target missing, skipping: $Target"
+        return
+    }
+    $parent = Split-Path -Parent $Link
+    if (-not (Test-Path $parent)) {
+        if ($PSCmdlet.ShouldProcess($parent, 'create directory')) {
+            New-Item -ItemType Directory -Path $parent -Force | Out-Null
+        }
+    }
+
+    $existing = Get-Item $Link -Force -ErrorAction SilentlyContinue
+    if ($existing) {
+        if ($existing.LinkType -eq 'SymbolicLink' -and $existing.Target -eq $Target) {
+            Write-Note "link ok: $Link"
+            return
+        }
+        $bak = "$Link.bak-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        if ($PSCmdlet.ShouldProcess($Link, "back up to $bak")) {
+            Move-Item $Link $bak
+            Write-Note "backed up existing $Link -> $bak"
+        }
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($Link, "symlink -> $Target")) { return }
+    try {
+        New-Item -ItemType SymbolicLink -Path $Link -Target $Target -Force -ErrorAction Stop | Out-Null
+        Write-Ok "linked $Link"
+    }
+    catch {
+        Copy-Item $Target $Link -Force
+        Write-Warn2 "symlink failed (enable Developer Mode); copied a static file to $Link"
+    }
+}
+
+Write-Section "dotfiles"
+$nvimDir = Join-Path $env:LOCALAPPDATA 'nvim'
+New-DotfilesLink -Target (Join-Path $DotfilesDir 'config\nvim\init.lua')       -Link (Join-Path $nvimDir 'init.lua')
+New-DotfilesLink -Target (Join-Path $DotfilesDir 'config\nvim\lazy-lock.json') -Link (Join-Path $nvimDir 'lazy-lock.json')
+
+# git-delta config: cp-style via include.path (mirrors 03-dotfiles.sh 95-132).
+$deltaSrc  = Join-Path $DotfilesDir 'config\git\gitconfig'
+$deltaDest = Join-Path $HOME '.gitconfig.delta'
+if (Test-Path $deltaSrc) {
+    if ($PSCmdlet.ShouldProcess($deltaDest, 'copy git-delta config')) {
+        if ((Test-Path $deltaDest) -and -not (Get-Item $deltaDest).PSIsContainer) {
+            $same = (Get-FileHash $deltaSrc).Hash -eq (Get-FileHash $deltaDest).Hash
+            if (-not $same) {
+                Copy-Item $deltaDest "$deltaDest.bak-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+            }
+        }
+        Copy-Item $deltaSrc $deltaDest -Force
+        Write-Ok "git-delta config at $deltaDest"
+    }
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        $includes = (git config --global --get-all include.path 2>$null)
+        $deltaFwd = $deltaDest -replace '\\', '/'
+        if ($includes -notcontains $deltaFwd) {
+            if ($PSCmdlet.ShouldProcess('git config --global include.path', 'add')) {
+                git config --global include.path $deltaFwd
+            }
+        }
+        if ($PSCmdlet.ShouldProcess('git config --global core.symlinks', 'set true')) {
+            git config --global core.symlinks true
+        }
+    }
+}
+
+$devDir = Join-Path $HOME 'dev'
+if (-not (Test-Path $devDir)) {
+    if ($PSCmdlet.ShouldProcess($devDir, 'create')) {
+        New-Item -ItemType Directory -Path $devDir -Force | Out-Null
+        Write-Ok "created $devDir"
+    }
+}
+
+# --------------------------------------------------------------------------
+#  Phase 3 - shell (pwsh profile)
+# --------------------------------------------------------------------------
+Write-Section "shell (pwsh profile)"
+New-DotfilesLink -Target (Join-Path $DotfilesDir 'windows\profile.ps1') -Link $PROFILE.CurrentUserCurrentHost
+
+# --------------------------------------------------------------------------
+#  Phase 4 - 1Password SSH agent + gh
+# --------------------------------------------------------------------------
+function Invoke-AuthPhase {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    Write-Section "connect and authenticate (1Password, SSH, gh)"
+
+    $opApp = [bool](Get-AppxPackage -Name AgileBits.1Password -ErrorAction SilentlyContinue)
+    if (-not $opApp -and $hasWinget) {
+        if ($PSCmdlet.ShouldProcess('AgileBits.1Password', 'winget install')) {
+            winget install --id AgileBits.1Password --exact --silent `
+                --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+        }
+    }
+
+    Write-Step "In the 1Password app:"
+    Write-Host "     1. Settings > Developer > enable 'Use the SSH agent'"
+    Write-Host "     2. Settings > Developer > enable 'Integrate with 1Password CLI'"
+    if (-not $WhatIfPreference) { Read-Host "     Press Enter when done" | Out-Null }
+
+    # The Windows OpenSSH ssh-agent service must not own the named pipe or
+    # 1Password cannot bind it. Disabling the service needs admin, so instruct
+    # rather than elevate.
+    $svc = Get-Service ssh-agent -ErrorAction SilentlyContinue
+    if ($svc -and $svc.Status -eq 'Running') {
+        Write-Warn2 "The Windows ssh-agent service is running and will shadow 1Password."
+        Write-Host  "     Run this ONCE in an elevated PowerShell:"
+        Write-Host  "       Stop-Service ssh-agent; Set-Service ssh-agent -StartupType Disabled"
+    }
+
+    $pipe = Test-Path '\\.\pipe\openssh-ssh-agent'
+    if ($pipe) {
+        $keys = ssh-add -l 2>&1 | Out-String
+        if ($keys -match 'SHA256:') {
+            Write-Ok "1Password SSH agent is exposing keys"
+        }
+        else {
+            Write-Warn2 "SSH agent pipe exists but no keys yet; unlock 1Password."
+        }
+    }
+    else {
+        Write-Warn2 "No SSH agent pipe. Enable the 1Password SSH agent and reopen this shell."
+    }
+
+    # gh via the op shell plugin (mirrors install.sh 673-689).
+    if (Get-Command op -ErrorAction SilentlyContinue) {
+        Write-Step "op plugin init gh"
+        if (-not $WhatIfPreference) {
+            op plugin init gh
+        }
+        $opPlugins = Join-Path $HOME '.config\op\plugins.ps1'
+        $localProfile = Join-Path $HOME '.pwsh_profile.local'
+        $sourceLine = ". `"$opPlugins`""
+        if (-not (Test-Path $localProfile) -or
+            -not (Select-String -Path $localProfile -SimpleMatch 'op\plugins.ps1' -Quiet)) {
+            if ($PSCmdlet.ShouldProcess($localProfile, 'add op plugin source line')) {
+                Add-Content $localProfile $sourceLine
+                Write-Ok "gh plugin wired into ~/.pwsh_profile.local"
+            }
+        }
+        $ghHosts = Join-Path $HOME '.config\gh\hosts.yml'
+        Remove-Item $ghHosts -ErrorAction SilentlyContinue   # no on-disk gh creds
+    }
+    else {
+        Write-Warn2 "op CLI not found; install it (winget install AgileBits.1Password.CLI) and run 'op plugin init gh'"
+    }
+
+    Write-Note "Private overlay (sonus, ai-cli-configs) is macOS/Linux only; not applied here."
+}
+
+if ($SkipAuth) {
+    Write-Section "connect and authenticate (skipped)"
+}
+else {
+    Invoke-AuthPhase
+}
+
+# --------------------------------------------------------------------------
+#  Verify
+# --------------------------------------------------------------------------
+if ($WhatIfPreference) {
+    Write-Section "verify (skipped under -WhatIf)"
+    Write-Host "`nDry run complete. Nothing was changed." -ForegroundColor Cyan
+    return
+}
+
+Write-Section "verify"
+$fails = 0
+foreach ($bin in 'git', 'nvim', 'pwsh') {
+    if (Get-Command $bin -ErrorAction SilentlyContinue) { Write-Ok "$bin on PATH" }
+    else { Write-Warn2 "$bin not found"; $fails++ }
+}
+$prof = Get-Item $PROFILE.CurrentUserCurrentHost -Force -ErrorAction SilentlyContinue
+if ($prof -and $prof.LinkType -eq 'SymbolicLink') { Write-Ok "pwsh profile is a symlink" }
+elseif ($prof) { Write-Note "pwsh profile exists (static copy)" }
+else { Write-Warn2 "pwsh profile missing"; $fails++ }
+
+if (Test-Path (Join-Path $HOME '.gitconfig.delta')) { Write-Ok "~/.gitconfig.delta present" }
+
+if ($fails -eq 0) { Write-Host "`nAll checks passed." -ForegroundColor Green }
+else { Write-Host "`n$fails check(s) failed (see above)." -ForegroundColor Yellow }
+
+Write-Host "`nReopen PowerShell to load the new profile." -ForegroundColor Cyan

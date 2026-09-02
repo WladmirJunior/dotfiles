@@ -1,7 +1,7 @@
 # dotfiles
 
 Dev environment setup for macOS and Linux (Arch, Debian and Fedora families, including
-EndeavourOS/CachyOS, Ubuntu and Kali).
+EndeavourOS/CachyOS, Ubuntu and Kali), plus a minimal native Windows port (`install.ps1`).
 
 The installer detects the host (physical Mac, Mac VM, or Linux/VM) and skips GUI apps that only make sense on a physical machine.
 
@@ -75,6 +75,18 @@ A normal install runs the verification automatically as its last step. `--dry-ru
 wraps every state-changing command (symlinks, copies, package installs, `defaults
 write`) so you can preview a run on a fresh machine before committing to it.
 `--plan`/`-p` is kept as an alias of `--dry-run` for muscle memory; it adds nothing.
+
+### Windows (native)
+
+`install.ps1` is a minimal PowerShell 7 port: CLI tools via winget, nvim/git
+configs, a pwsh profile and the 1Password SSH agent. No sonus, ai-cli-configs or
+private overlay. See [`windows/README.md`](windows/README.md).
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/install.ps1 | iex
+```
+
+For full Linux parity on a Windows box, run `install.sh` inside WSL2 instead.
 
 ### Templates
 

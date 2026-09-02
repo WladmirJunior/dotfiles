@@ -1,0 +1,30 @@
+name: Installer checks (Windows)
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          # Write-Host is deliberate: this is an interactive installer, not a
+          # pipeline component. Everything else must be clean at Warning+.
+          $excl = 'PSAvoidUsingWriteHost'
+          $r = @()
+          foreach ($f in 'install.ps1', 'windows/profile.ps1') {
+            $r += Invoke-ScriptAnalyzer -Path $f -Severity Warning, Error -ExcludeRule $excl
+          }
+          $r | Format-Table -AutoSize
+          if ($r) { throw "PSScriptAnalyzer reported $($r.Count) issue(s)" }
+      - name: Dry-run install.ps1
+        shell: pwsh
+        run: pwsh -NoProfile -File ./install.ps1 -WhatIf -SkipAuth -SkipPackages
