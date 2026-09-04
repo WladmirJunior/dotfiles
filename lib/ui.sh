@@ -276,19 +276,99 @@ confirm() {  # confirm "Question"  → exit status (yes=0)
 
 # summary_table  — reads "Component|Selection" lines on stdin, renders a grid.
 # With the fork: per-row dividers (--border-row) and a fixed width matching the
-# header box (--width; +2 offsets gum's column-split rounding), styling neutralized
-# so the first data row isn't treated as a header. Without the fork: a plain gum
-# table. Without gum at all: column(1).
+# header box (--width), styling neutralized so the first data row isn't treated
+# as a header. Without the fork: a plain gum table. Without gum at all: column(1).
+#
+# Both gum paths size the table from the widest cell unless told otherwise, so a
+# single long value blows the grid past the terminal: the horizontal rules wrap
+# while the verticals do not and the border comes apart (that is what a long
+# Details column used to do to the install summary). Cells are therefore elided
+# to the budget the layout can pay for before gum sees them, keeping one row per
+# entry, and every path is left-padded to line up with banner()/step().
+
+# table_fit_stdin BUDGET COLUMNS
+#   Trim pipe-separated cells so a rendered row fits BUDGET printable columns.
+#   Leading columns keep their natural width (short and identifying); the last
+#   column absorbs the remaining budget and is elided when it overflows.
+table_fit_stdin() {
+  local budget="$1" columns="$2"
+  awk -v budget="$budget" -v cols="$columns" '
+    BEGIN {
+      FS = "|"; OFS = "|"
+      ncol = split(cols, name, ",")
+      chrome = 4 + 3 * (ncol - 1)     # "| " + " | " * (ncol-1) + " |"
+      avail = budget - chrome
+      if (avail < ncol * 3) avail = ncol * 3
+      for (i = 1; i <= ncol; i++) max[i] = length(name[i])
+    }
+    {
+      for (i = 1; i <= ncol; i++) {
+        if (length($i) > max[i]) max[i] = length($i)
+        cell[NR, i] = $i
+      }
+      rows = NR
+    }
+    END {
+      total = 0
+      for (i = 1; i <= ncol; i++) { width[i] = max[i]; total += max[i] }
+      if (total > avail) {
+        # The last column gives up its slack first; the leading ones are short
+        # and identifying, so they keep their natural width while that is
+        # affordable. Only when the last column would drop below floor do the
+        # leading ones get capped, so one runaway identifier cannot squeeze it
+        # down to nothing.
+        floor = 24
+        if (floor > int(avail / 2)) floor = int(avail / 2)
+        if (floor < 12) floor = 12
+        lead = 0
+        for (i = 1; i < ncol; i++) lead += width[i]
+        if (avail - lead < floor) {
+          cap = int(avail / (ncol + 1))
+          if (cap < 8) cap = 8
+          lead = 0
+          for (i = 1; i < ncol; i++) {
+            if (width[i] > cap) width[i] = cap
+            lead += width[i]
+          }
+        }
+        width[ncol] = avail - lead
+        if (width[ncol] < 12) width[ncol] = 12
+      }
+      for (r = 1; r <= rows; r++) {
+        out = ""
+        for (i = 1; i <= ncol; i++) {
+          v = cell[r, i]
+          if (length(v) > width[i]) v = substr(v, 1, width[i] - 1) "…"
+          out = (i == 1) ? v : out OFS v
+        }
+        print out
+      }
+    }
+  '
+}
+
+# pad_stdin: left-margin every line so gum output lines up with banner()/step().
+pad_stdin() { sed "s/^/${PAD}/"; }
+
 summary_table() {
   local columns="${1:-Component,Selection}" widths="${2:-22,40}"
+  # +2 matches banner(), whose --padding "0 2" adds 4 columns to its own --width.
+  local inner; inner="$(( $(cwidth) + 2 ))"
   if have_gum && gum_has_width; then
-    "$GUM" table -p --separator="|" --border double --border-row \
-      --border.foreground=$THEME_BORDER --selected.foreground=$THEME_VALUE --selected.bold=false \
-      --columns "$columns" --width "$(( $(cwidth) + 2 ))"
+    table_fit_stdin "$inner" "$columns" \
+      | "$GUM" table -p --separator="|" --border double --border-row \
+          --border.foreground=$THEME_BORDER --selected.foreground=$THEME_VALUE --selected.bold=false \
+          --columns "$columns" --width "$inner" \
+      | pad_stdin
   elif have_gum; then
-    "$GUM" table -p --separator="|" --border double --border.foreground=$THEME_BORDER \
-      --columns "$columns" --widths "$widths"
-  else { printf '%s\n' "${columns//,/|}"; cat; } | column -t -s'|'; fi
+    table_fit_stdin "$inner" "$columns" \
+      | "$GUM" table -p --separator="|" --border double --border.foreground=$THEME_BORDER \
+          --columns "$columns" --widths "$widths" \
+      | pad_stdin
+  else
+    { printf '%s\n' "${columns//,/|}"; table_fit_stdin "$inner" "$columns"; } \
+      | column -t -s'|' | pad_stdin
+  fi
   return 0
 }
 

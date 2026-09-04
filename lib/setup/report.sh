@@ -15,6 +15,9 @@ setup_report_add() {
   [ -n "${DOTFILES_REPORT_FILE:-}" ] || return 0
   detail="${detail//$'\n'/ }"
   detail="${detail//|//}"
+  # The summary table has a column budget; ~ buys back the whole home prefix so
+  # the interesting tail of a path survives instead of being elided away.
+  if [ -n "${HOME:-}" ]; then detail="${detail//$HOME/~}"; fi
   printf '%s|%s|%s|%s\n' "$scope" "$component" "$result" "$detail" \
     >> "$DOTFILES_REPORT_FILE" 2>/dev/null || true
 }
