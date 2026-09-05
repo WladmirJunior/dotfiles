@@ -71,6 +71,25 @@ alias ggpush='git push origin $(current_branch)'
 # ─────────────────────────── SSH ───────────────────────────
 alias sshx='TERM=xterm-256color ssh'
 
+# Attach to the long-lived tmux session on the work Mac. `ssh -t` forces a TTY
+# (without it tmux exits with "not a terminal"), and `new-session -A` attaches
+# when `main` exists and creates it otherwise.
+#
+# The catch: on macOS the tmux SERVER carries the keychain security context and
+# hands it to its children. A server first spawned from a bare ssh session has
+# no keychain access, so Claude Code there fails with "Not logged in" even
+# though the keychain is unlocked. Attaching to a server that was started from
+# the machine's GUI is fine, and so is any session created inside it. So warn
+# only when this command would start the server itself.
+work() {
+  local host="${1:-work-remote}"
+  if ! ssh "$host" 'tmux has-session 2>/dev/null' 2>/dev/null; then
+    print -u2 "warning: no tmux server on $host; the session it creates will lack"
+    print -u2 "         keychain access. For Claude Code, start tmux from the Mac's GUI."
+  fi
+  ssh "$host" -t 'tmux new-session -A -s main'
+}
+
 # ─────────────────────────── History ───────────────────────────
 HISTFILE=~/.zsh_history
 HISTSIZE=50000
