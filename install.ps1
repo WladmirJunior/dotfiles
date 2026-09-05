@@ -345,6 +345,28 @@ if (Test-Path $deltaSrc) {
     }
 }
 
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    # Git for Windows ships its own MSYS2 OpenSSH and prefers it over the
+    # one on PATH. That build cannot talk to the 1Password named pipe, so
+    # `ssh -T git@github.com` authenticates while `git clone` fails with
+    # "Permission denied (publickey)". Point git at the system ssh.exe,
+    # which does speak the pipe. Forward slashes are required: git hands
+    # this value to an MSYS-style shell that strips backslashes.
+    $sysSsh = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
+    if (Test-Path $sysSsh) {
+        $sysSshFwd = $sysSsh -replace '\\', '/'
+        if ((git config --global core.sshCommand 2>$null) -ne $sysSshFwd) {
+            if ($PSCmdlet.ShouldProcess('git config --global core.sshCommand', 'set')) {
+                git config --global core.sshCommand $sysSshFwd
+                Write-Ok "git will use the Windows OpenSSH (1Password agent)"
+            }
+        }
+    }
+    else {
+        Write-Warn2 "Windows OpenSSH not found; git over SSH may not reach the 1Password agent."
+    }
+}
+
 $devDir = Join-Path $HOME 'dev'
 if (-not (Test-Path $devDir)) {
     if ($PSCmdlet.ShouldProcess($devDir, 'create')) {
