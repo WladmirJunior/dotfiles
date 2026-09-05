@@ -366,7 +366,10 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     $sysSsh = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
     if (Test-Path $sysSsh) {
         $sysSshFwd = $sysSsh -replace '\\', '/'
-        if ((git config --global core.sshCommand 2>$null) -ne $sysSshFwd) {
+        # Assign first: `(... 2>$null) -ne $x` reads as a redirection to
+        # the analyzer (PSPossibleIncorrectUsageOfRedirectionOperator).
+        $currentSshCmd = git config --global core.sshCommand 2>$null
+        if ($currentSshCmd -ne $sysSshFwd) {
             if ($PSCmdlet.ShouldProcess('git config --global core.sshCommand', 'set')) {
                 git config --global core.sshCommand $sysSshFwd
                 Write-Ok "git will use the Windows OpenSSH (1Password agent)"
