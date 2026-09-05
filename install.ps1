@@ -4,14 +4,15 @@
   Dotfiles installer for Windows (native PowerShell 7).
 
 .DESCRIPTION
-  Standalone counterpart of install.sh for Windows. Runs four phases:
+  Standalone counterpart of install.sh for Windows. Runs five phases:
     1. packages  - CLI tools via winget
     2. dotfiles  - symlink nvim / git configs
     3. shell     - symlink windows/profile.ps1 to the pwsh profile
-    4. auth      - wire up the 1Password SSH agent and the gh 1Password plugin
+    4. auth      - wire up the 1Password SSH agent and gh
+    5. private   - clone and run the private overlay (repo name from 1Password)
 
-  It does NOT cover sonus, ai-cli-configs, agent memory or the private overlay;
-  those stay macOS/Linux only. No transaction journal: each step backs up any
+  It does NOT cover sonus, ai-cli-configs or agent memory; those stay
+  macOS/Linux only. No transaction journal: each step backs up any
   pre-existing target to <path>.bak-<timestamp> and is idempotent.
 
 .PARAMETER SkipPackages
@@ -19,6 +20,9 @@
 
 .PARAMETER SkipAuth
   Skip phase 4 (1Password / gh).
+
+.PARAMETER SkipPrivate
+  Skip phase 5 (private overlay clone).
 
 .PARAMETER Repo
   owner/repo to self-clone from when run via `iwr ... | iex`.
@@ -34,6 +38,7 @@
 param(
     [switch]$SkipPackages,
     [switch]$SkipAuth,
+    [switch]$SkipPrivate,
     [string]$Repo = 'WladmirJunior/dotfiles'
 )
 
@@ -466,18 +471,29 @@ function Invoke-AuthPhase {
                     Write-Warn2 "expected an op://Vault/Item/field reference; skipping"
                 }
                 elseif ($PSCmdlet.ShouldProcess($localProfile, 'add GH_TOKEN wiring')) {
+                    # Resolve the PAT lazily. Calling `op read` at profile load
+                    # makes 1Password prompt for authentication in EVERY new
+                    # shell; a wrapper defers it to the first actual gh call.
                     $block = @(
                         ''
                         '# gh authenticates via a GitHub PAT read from 1Password (no token on disk).'
-                        "`$env:GH_TOKEN = (op read `"$ref`" 2>`$null)"
+                        '# Resolved on first use, not at shell start, so opening a terminal'
+                        '# never triggers a 1Password prompt.'
+                        "`$script:GhTokenRef = '$ref'"
+                        'function gh {'
+                        '    if (-not $env:GH_TOKEN) {'
+                        '        $env:GH_TOKEN = (op read $script:GhTokenRef 2>$null)'
+                        '    }'
+                        '    & (Get-Command gh.exe -CommandType Application | Select-Object -First 1) @args'
+                        '}'
                     )
                     Add-Content $localProfile $block
-                    Write-Ok "GH_TOKEN wired into ~/.pwsh_profile.local.ps1"
+                    Write-Ok "GH_TOKEN wired into ~/.pwsh_profile.local.ps1 (resolved on first gh use)"
                 }
             }
             else {
                 Write-Note "skipped gh wiring; add it later to ~/.pwsh_profile.local.ps1:"
-                Write-Host  '       $env:GH_TOKEN = (op read "op://<vault>/<item>/<field>")'
+                Write-Host  '       function gh { if (-not $env:GH_TOKEN) { $env:GH_TOKEN = (op read "op://<vault>/<item>/<field>" 2>$null) }; & (Get-Command gh.exe -CommandType Application | Select-Object -First 1) @args }'
             }
         }
         $ghHosts = Join-Path $HOME '.config\gh\hosts.yml'
@@ -487,7 +503,72 @@ function Invoke-AuthPhase {
         Write-Warn2 "op CLI not found; install it (winget install AgileBits.1Password.CLI)"
     }
 
-    Write-Note "Private overlay (sonus, ai-cli-configs) is macOS/Linux only; not applied here."
+    Write-Note "sonus and ai-cli-configs stay macOS/Linux only; not applied here."
+}
+
+# --------------------------------------------------------------------------
+#  Phase 5: private overlay
+# --------------------------------------------------------------------------
+# Mirrors apply_private_overlay() in install.sh: the overlay repo name comes
+# from the 1Password bootstrap note, so no private repo name is hardcoded in
+# this public repository. Cloning uses git over SSH, which relies on the
+# 1Password SSH agent rather than the PAT.
+function Invoke-PrivateOverlayPhase {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    Write-Section "private overlay"
+
+    if (-not (Get-Command op -ErrorAction SilentlyContinue)) {
+        Write-Warn2 "op CLI not available; skipping the private overlay."
+        return
+    }
+
+    if ($WhatIfPreference) {
+        Write-Note "would read private_repo from 1Password, then clone and run the overlay"
+        return
+    }
+
+    $privateRepo = (op item get dotfiles-bootstrap --vault Private `
+            --fields private_repo 2>$null)
+    if (-not $privateRepo) {
+        Write-Warn2 "could not read private_repo from the 1Password bootstrap note; skipping."
+        return
+    }
+    $privateRepo = $privateRepo.Trim()
+
+    $leaf = [System.IO.Path]::GetFileNameWithoutExtension($privateRepo)
+    $privateDir = Join-Path $HOME ".$leaf"
+
+    if (Test-Path (Join-Path $privateDir '.git')) {
+        if ($PSCmdlet.ShouldProcess($privateDir, 'git pull --ff-only')) {
+            git -C $privateDir pull --ff-only
+            if ($LASTEXITCODE -ne 0) { Write-Warn2 "pull failed in $privateDir"; return }
+            Write-Ok "updated $privateDir"
+        }
+    }
+    elseif ($PSCmdlet.ShouldProcess($privateDir, 'git clone')) {
+        # Fail fast when the agent cannot authenticate, instead of letting the
+        # clone fail with a misleading error.
+        $probe = (ssh -o BatchMode=yes -o ConnectTimeout=15 -T git@github.com 2>&1 | Out-String)
+        if ($probe -notmatch 'successfully authenticated') {
+            Write-Warn2 "GitHub did not accept any key from the 1Password SSH agent."
+            Write-Host  "     Unlock 1Password, enable its SSH agent, and rerun."
+            return
+        }
+        git clone "git@github.com:$privateRepo.git" $privateDir
+        if ($LASTEXITCODE -ne 0) { Write-Warn2 "clone failed"; return }
+        Write-Ok "cloned $privateRepo into $privateDir"
+    }
+
+    $privateInstaller = Join-Path $privateDir 'install.ps1'
+    if (-not (Test-Path $privateInstaller)) {
+        Write-Note "no install.ps1 in the overlay; nothing further to run."
+        return
+    }
+    if ($PSCmdlet.ShouldProcess($privateInstaller, 'run private installer')) {
+        & pwsh -NoProfile -File $privateInstaller
+    }
 }
 
 if ($SkipAuth) {
@@ -496,6 +577,14 @@ if ($SkipAuth) {
 else {
     Invoke-AuthPhase
 }
+
+if ($SkipPrivate) {
+    Write-Section "private overlay (skipped)"
+}
+else {
+    Invoke-PrivateOverlayPhase
+}
+
 
 # --------------------------------------------------------------------------
 #  Verify

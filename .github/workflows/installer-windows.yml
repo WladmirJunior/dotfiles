@@ -27,4 +27,4 @@ jobs:
           if ($r) { throw "PSScriptAnalyzer reported $($r.Count) issue(s)" }
       - name: Dry-run install.ps1
         shell: pwsh
-        run: pwsh -NoProfile -File ./install.ps1 -WhatIf -SkipAuth -SkipPackages
+        run: pwsh -NoProfile -File ./install.ps1 -WhatIf -SkipAuth -SkipPackages -SkipPrivate

@@ -51,9 +51,14 @@ pwsh -File ~/.dotfiles/install.ps1              # everything, including 1Passwor
 4. auth: guides enabling the 1Password SSH agent, checks the
    `\\.\pipe\openssh-ssh-agent` pipe. For `gh`: 1Password shell plugins are not
    supported on Windows (1Password/shell-plugins#403), so instead it writes a
-   `$env:GH_TOKEN = (op read "op://...")` line into `~/.pwsh_profile.local.ps1`
-   from a secret reference you provide. `gh` reads `GH_TOKEN` before any
-   on-disk config, so no token is written to `~/.config/gh/hosts.yml`.
+   `gh` wrapper into `~/.pwsh_profile.local.ps1` from a secret reference you
+   provide. The wrapper resolves the PAT with `op read` on the first `gh` call,
+   never at shell start, so opening a terminal does not prompt 1Password. `gh`
+   reads `GH_TOKEN` before any on-disk config, so no token is written to
+   `~/.config/gh/hosts.yml`.
+5. private: reads the overlay repo name from the 1Password bootstrap note,
+   clones it over SSH (or pulls if already present) and runs its `install.ps1`.
+   Skip with `-SkipPrivate`.
 
 ### Not installed
 
