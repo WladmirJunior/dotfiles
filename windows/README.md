@@ -47,11 +47,11 @@ pwsh -File ~/.dotfiles/install.ps1              # everything, including 1Passwor
    `%LOCALAPPDATA%\nvim`, copies `config/git/gitconfig` to `~/.gitconfig.delta`
    and wires it via `git config --global include.path`.
 3. shell: symlinks `windows/profile.ps1` to `$PROFILE.CurrentUserCurrentHost`.
-   Machine-local tweaks go in `~/.pwsh_profile.local` (not versioned).
+   Machine-local tweaks go in `~/.pwsh_profile.local.ps1` (not versioned).
 4. auth: guides enabling the 1Password SSH agent, checks the
    `\\.\pipe\openssh-ssh-agent` pipe. For `gh`: 1Password shell plugins are not
    supported on Windows (1Password/shell-plugins#403), so instead it writes a
-   `$env:GH_TOKEN = (op read "op://...")` line into `~/.pwsh_profile.local`
+   `$env:GH_TOKEN = (op read "op://...")` line into `~/.pwsh_profile.local.ps1`
    from a secret reference you provide. `gh` reads `GH_TOKEN` before any
    on-disk config, so no token is written to `~/.config/gh/hosts.yml`.
 

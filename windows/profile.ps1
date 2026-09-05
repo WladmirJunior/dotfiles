@@ -1,6 +1,6 @@
 # Managed by dotfiles. Symlinked to $PROFILE.CurrentUserCurrentHost by install.ps1.
 # Windows / PowerShell 7 counterpart of config/zsh/zshrc. Machine-local overrides
-# go in ~/.pwsh_profile.local (not versioned), sourced at the end.
+# go in ~/.pwsh_profile.local.ps1 (not versioned), sourced at the end.
 
 # --------------------------------- PATH ---------------------------------
 $localBin = Join-Path $HOME '.local\bin'
@@ -105,5 +105,5 @@ function prompt {
 }
 
 # ---------------------------- Local overlay (optional) ----------------------
-$localProfile = Join-Path $HOME '.pwsh_profile.local'
+$localProfile = Join-Path $HOME '.pwsh_profile.local.ps1'
 if (Test-Path $localProfile) { . $localProfile }

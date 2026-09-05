@@ -450,11 +450,11 @@ function Invoke-AuthPhase {
     # vault into $env:GH_TOKEN at shell start: gh reads GH_TOKEN before any
     # on-disk config, so nothing is written to ~/.config/gh/hosts.yml.
     if (Get-Command op -ErrorAction SilentlyContinue) {
-        $localProfile = Join-Path $HOME '.pwsh_profile.local'
+        $localProfile = Join-Path $HOME '.pwsh_profile.local.ps1'
         $marker = 'GH_TOKEN'
         if ((Test-Path $localProfile) -and
             (Select-String -Path $localProfile -SimpleMatch $marker -Quiet)) {
-            Write-Note "GH_TOKEN wiring already in ~/.pwsh_profile.local"
+            Write-Note "GH_TOKEN wiring already in ~/.pwsh_profile.local.ps1"
         }
         elseif ($WhatIfPreference) {
             Write-Note "would prompt for a GitHub PAT secret reference and wire GH_TOKEN"
@@ -472,11 +472,11 @@ function Invoke-AuthPhase {
                         "`$env:GH_TOKEN = (op read `"$ref`" 2>`$null)"
                     )
                     Add-Content $localProfile $block
-                    Write-Ok "GH_TOKEN wired into ~/.pwsh_profile.local"
+                    Write-Ok "GH_TOKEN wired into ~/.pwsh_profile.local.ps1"
                 }
             }
             else {
-                Write-Note "skipped gh wiring; add it later to ~/.pwsh_profile.local:"
+                Write-Note "skipped gh wiring; add it later to ~/.pwsh_profile.local.ps1:"
                 Write-Host  '       $env:GH_TOKEN = (op read "op://<vault>/<item>/<field>")'
             }
         }
