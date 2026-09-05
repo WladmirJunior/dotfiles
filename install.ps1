@@ -111,13 +111,24 @@ if (-not $repoRoot) {
     return
 }
 if ($repoRoot -ne $DotfilesDir) {
-    if (Test-Path $DotfilesDir) {
-        throw "This clone is at $repoRoot but $DotfilesDir already exists. Remove one."
+    # Relocating is a real side effect, so honour -WhatIf: report it and keep
+    # checking from the current checkout instead. A dry run from an arbitrary
+    # path (CI checks out to its own workspace) must not move the running
+    # script out from under itself.
+    if ($WhatIfPreference) {
+        Write-Note "would move this clone from $repoRoot to $DotfilesDir"
+        Write-Note "continuing the dry run from $repoRoot"
+        $DotfilesDir = $repoRoot
     }
-    Write-Step "moving clone from $repoRoot to $DotfilesDir"
-    Move-Item $repoRoot $DotfilesDir
-    & (Join-Path $DotfilesDir 'install.ps1') @PSBoundParameters
-    return
+    else {
+        if (Test-Path $DotfilesDir) {
+            throw "This clone is at $repoRoot but $DotfilesDir already exists. Remove one."
+        }
+        Write-Step "moving clone from $repoRoot to $DotfilesDir"
+        Move-Item $repoRoot $DotfilesDir
+        & (Join-Path $DotfilesDir 'install.ps1') @PSBoundParameters
+        return
+    }
 }
 
 Write-Section "dotfiles - Windows native setup"
