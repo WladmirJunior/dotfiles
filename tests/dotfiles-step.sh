@@ -94,4 +94,39 @@ run_step "$TMP/home-d" "" "$TMP/git-d.calls" "$TMP/tx-d.jsonl" 2> "$TMP/step-d.e
   || { echo "step 03 aborted on a failed yazi plugin refresh" >&2; exit 1; }
 grep -q 'yazi plugin install failed; continuing' "$TMP/step-d.err"
 
+# 4) ~/.zshenv: written as a real file (never a symlink into the repo, which a
+# later `cat >` would write through), sourcing the repo copy and the local
+# overlay. It is what gives non-interactive `ssh host cmd` a usable PATH.
+[ -f "$TMP/home-a/.zshenv" ] || { echo "step 03 did not write ~/.zshenv" >&2; exit 1; }
+[ -L "$TMP/home-a/.zshenv" ] && { echo "~/.zshenv must be a real file, not a symlink" >&2; exit 1; }
+grep -qF "$ROOT/config/zsh/zshenv" "$TMP/home-a/.zshenv"
+grep -qF '.zshenv.local' "$TMP/home-a/.zshenv"
+grep -q "created:$TMP/home-a/.zshenv" "$TMP/tx-a.jsonl"
+
+# 4b) A pre-existing ~/.zshenv is backed up through the transaction (restored on
+# rollback), never blind-overwritten.
+mkdir -p "$TMP/home-e"
+printf 'export MINE=1\n' > "$TMP/home-e/.zshenv"
+run_step "$TMP/home-e" "" "$TMP/git-e.calls" "$TMP/tx-e.jsonl"
+grep -q 'write:.zshenv' "$TMP/tx-e.jsonl"
+grep -qF "$ROOT/config/zsh/zshenv" "$TMP/home-e/.zshenv"
+
+# 4c) Idempotent: a second run over an already-managed ~/.zshenv rewrites
+# nothing and records no new backup.
+run_step "$TMP/home-e" "" "$TMP/git-e2.calls" "$TMP/tx-e2.jsonl"
+if grep -q 'write:.zshenv' "$TMP/tx-e2.jsonl" 2>/dev/null; then
+  echo "step 03 rewrote an already-managed ~/.zshenv" >&2
+  exit 1
+fi
+
+# 4d) The repo zshenv must not grow PATH when sourced repeatedly (nested
+# shells source it again; an unguarded prepend would duplicate the entry).
+dup="$(PATH=/opt/homebrew/bin:/usr/bin:/bin zsh -c '
+  . '"$ROOT"'/config/zsh/zshenv; . '"$ROOT"'/config/zsh/zshenv
+  print -r -- $PATH' 2>/dev/null | tr ':' '\n' | grep -c '^/opt/homebrew/bin$' || true)"
+if [ -n "$dup" ] && [ "$dup" -gt 1 ]; then
+  echo "config/zsh/zshenv duplicated /opt/homebrew/bin in PATH ($dup times)" >&2
+  exit 1
+fi
+
 echo "Dotfiles step tests passed."

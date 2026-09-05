@@ -1,0 +1,18 @@
+# Managed by dotfiles. Sourced by EVERY zsh, including non-interactive ones.
+#
+# Non-interactive shells (`ssh host "cmd"`, scp, rsync, git hooks) read this
+# file but NOT ~/.zshrc, so without it PATH is the system minimum and Homebrew
+# binaries are unreachable. That is why `ssh host tmux ls` fails on a Mac where
+# tmux is plainly installed.
+#
+# Keep this file cheap and side-effect free: it runs on every shell spawn.
+# Interactive-only setup belongs in the zshrc, not here.
+
+if [ -x /opt/homebrew/bin/brew ]; then
+  # Guard against re-prepending: zsh sources this again for nested shells, and
+  # an unguarded prepend grows PATH on every level.
+  case ":$PATH:" in
+    *":/opt/homebrew/bin:"*) ;;
+    *) export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH" ;;
+  esac
+fi

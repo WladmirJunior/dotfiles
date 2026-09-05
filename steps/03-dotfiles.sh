@@ -64,6 +64,33 @@ if [ ! -f "$HOME/.zshrc" ] || [ -L "$HOME/.zshrc" ] || ! grep -qF "$ZSH_CONFIG" 
       "[ -f \"$ZSH_CONFIG\" ] && source \"$ZSH_CONFIG\"" > "$HOME/.zshrc"
   fi
 fi
+# ~/.zshenv is the only file every zsh reads, interactive or not. Without it,
+# `ssh host "cmd"` runs with the system-minimum PATH and cannot see Homebrew
+# (tmux, node, gh), which breaks remote automation on an otherwise fine Mac.
+# Same thin-file treatment as ~/.zshrc: a real file sourcing the repo, so a
+# machine-local overlay can append without writing into the versioned copy.
+ZSHENV_CONFIG="$D/config/zsh/zshenv"
+if [ ! -f "$HOME/.zshenv" ] || [ -L "$HOME/.zshenv" ] || ! grep -qF "$ZSHENV_CONFIG" "$HOME/.zshenv"; then
+  if [ "${DRY_RUN:-0}" = 1 ]; then
+    echo "[dry-run] write thin ~/.zshenv (sources $ZSHENV_CONFIG)"
+  else
+    # Same hazard as ~/.zshrc: writing through a symlink would clobber the repo
+    # file. Snapshot the link for rollback, then drop it and write a real file.
+    if [ -L "$HOME/.zshenv" ]; then
+      _zelink="$(readlink "$HOME/.zshenv")"
+      tx_run "write:.zshenv" ln -sfn "$_zelink" "$HOME/.zshenv" -- true
+      rm -f "$HOME/.zshenv"
+    elif [ -e "$HOME/.zshenv" ]; then
+      tx_backup_path "write:.zshenv" "$HOME/.zshenv" "$HOME/.zshenv.txbak.$$"
+    else
+      tx_created_path "$HOME/.zshenv"
+    fi
+    printf '%s\n' \
+      '# Managed by dotfiles. Public config lives in the repo; local overlays in ~/.zshenv.local.' \
+      "[ -f \"$ZSHENV_CONFIG\" ] && source \"$ZSHENV_CONFIG\"" \
+      '[ -f "$HOME/.zshenv.local" ] && source "$HOME/.zshenv.local"' > "$HOME/.zshenv"
+  fi
+fi
 lnk "$D/config/nvim/init.lua"   "$HOME/.config/nvim/init.lua"
 lnk "$D/config/yazi/init.lua" "$HOME/.config/yazi/init.lua"
 lnk "$D/config/yazi/package.toml" "$HOME/.config/yazi/package.toml"
