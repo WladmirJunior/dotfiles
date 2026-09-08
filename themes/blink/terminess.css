@@ -1,0 +1,41 @@
+/* Terminess Nerd Font Mono — Blink Shell font stylesheet
+ *
+ * Blink assigns font families via CSS, not by importing a font file directly:
+ * the "CSS FONT-FAMILY STYLESHEET" field wants the URL of THIS file.
+ *
+ * Font-Family Name field in the app: Terminess Nerd Font Mono
+ * (it must match the family-name declared below, exactly)
+ *
+ * Source: the same font the Ghostty config-retro-crt profile uses
+ * (cool-retro-term TERMINESS_SCALED), installed on macOS via
+ * `brew install --cask font-terminess-ttf-nerd-font`. The .ttf files there are
+ * ~2.1 MB each; these are woff2, ~1 MB, converted with woff2_compress.
+ */
+
+@font-face {
+  font-family: "Terminess Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessNerdFontMono-Regular.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Terminess Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessNerdFontMono-Bold.woff2") format("woff2");
+  font-weight: bold;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Terminess Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessNerdFontMono-Italic.woff2") format("woff2");
+  font-weight: normal;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: "Terminess Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessNerdFontMono-BoldItalic.woff2") format("woff2");
+  font-weight: bold;
+  font-style: italic;
+}
