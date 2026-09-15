@@ -123,8 +123,70 @@ setopt HIST_VERIFY
 unsetopt HIST_BEEP
 
 # ─────────────────────────── Keybindings ───────────────────────────
-bindkey '^?' backward-delete-char
-bindkey '^H' backward-delete-char
+# Keymap is declared, not inferred. Left unset, zsh picks it from $EDITOR, and
+# with EDITOR=nvim a nested shell lands in viins while a top-level login shell
+# gets emacs: same config, two behaviours. Emacs is the shell standard here
+# (Ctrl+A/E/K are used constantly, in and out of the terminal).
+bindkey -e
+
+# Word jumps. terminfo for xterm-ghostty only declares kLFT/kRIT (Shift), so
+# nothing maps Ctrl+arrow or Alt+arrow and the tail of the escape sequence used
+# to leak into the buffer as ";5D" / ";3C" text.
+#   CSI 1;<mod><letter>, where mod is 2=Shift 3=Alt 5=Ctrl 6=Ctrl+Shift
+_zle_wleft()  { REGION_ACTIVE=0; zle backward-word }
+_zle_wright() { REGION_ACTIVE=0; zle forward-word }
+_zle_left()   { REGION_ACTIVE=0; zle backward-char }
+_zle_right()  { REGION_ACTIVE=0; zle forward-char }
+
+# Shift+arrow grows the region, which zsh already renders (see zle_highlight
+# further down), so selection behaves like a macOS text field.
+_zle_sel_begin() { (( REGION_ACTIVE )) || { MARK=$CURSOR; REGION_ACTIVE=1; } }
+_zle_sel_left()   { _zle_sel_begin; zle backward-char }
+_zle_sel_right()  { _zle_sel_begin; zle forward-char }
+_zle_sel_wleft()  { _zle_sel_begin; zle backward-word }
+_zle_sel_wright() { _zle_sel_begin; zle forward-word }
+_zle_sel_home()   { _zle_sel_begin; zle beginning-of-line }
+_zle_sel_end()    { _zle_sel_begin; zle end-of-line }
+
+# Typing or backspacing over a live selection replaces it.
+_zle_insert() {
+    if (( REGION_ACTIVE )); then REGION_ACTIVE=0; zle kill-region; fi
+    zle .self-insert
+}
+_zle_backspace() {
+    if (( REGION_ACTIVE )); then
+        REGION_ACTIVE=0
+        zle kill-region
+    else
+        zle .backward-delete-char
+    fi
+}
+
+for _w in _zle_wleft _zle_wright _zle_left _zle_right \
+          _zle_sel_left _zle_sel_right _zle_sel_wleft _zle_sel_wright \
+          _zle_sel_home _zle_sel_end _zle_backspace; do
+    zle -N $_w
+done
+unset _w
+zle -N self-insert _zle_insert
+
+bindkey '^[[1;5D' _zle_wleft      # Ctrl+Left
+bindkey '^[[1;5C' _zle_wright     # Ctrl+Right
+bindkey '^[[1;3D' _zle_wleft      # Alt/Option+Left
+bindkey '^[[1;3C' _zle_wright     # Alt/Option+Right
+bindkey '^[[D'    _zle_left
+bindkey '^[[C'    _zle_right
+bindkey '^[[1;2D' _zle_sel_left   # Shift+Left
+bindkey '^[[1;2C' _zle_sel_right  # Shift+Right
+bindkey '^[[1;4D' _zle_sel_wleft  # Shift+Alt+Left
+bindkey '^[[1;4C' _zle_sel_wright # Shift+Alt+Right
+bindkey '^[[1;6D' _zle_sel_wleft  # Ctrl+Shift+Left
+bindkey '^[[1;6C' _zle_sel_wright # Ctrl+Shift+Right
+bindkey '^[[1;2H' _zle_sel_home
+bindkey '^[[1;2F' _zle_sel_end
+
+bindkey '^?' _zle_backspace
+bindkey '^H' _zle_backspace
 
 sudo-command-line() {
     [[ -z $BUFFER ]] && zle up-history
