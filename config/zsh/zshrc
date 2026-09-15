@@ -190,6 +190,13 @@ bindkey '^[[1;2F' _zle_sel_end
 bindkey '^[[1;10D' _zle_sel_home
 bindkey '^[[1;10C' _zle_sel_end
 
+# Ctrl+Up/Down walk the history, the arrow equivalent of Ctrl+P / Ctrl+N.
+# Plain Up/Down can't do this on a multi-line entry: there they move between
+# the lines of the buffer, so reaching the previous command means walking to
+# the edge first. These always change entry regardless of the cursor row.
+bindkey '^[[1;5A' up-history
+bindkey '^[[1;5B' down-history
+
 bindkey '^?' _zle_backspace
 bindkey '^H' _zle_backspace
 
