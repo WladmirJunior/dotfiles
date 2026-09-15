@@ -92,6 +92,7 @@ if [ ! -f "$HOME/.zshenv" ] || [ -L "$HOME/.zshenv" ] || ! grep -qF "$ZSHENV_CON
   fi
 fi
 lnk "$D/config/nvim/init.lua"   "$HOME/.config/nvim/init.lua"
+lnk "$D/config/tmux/tmux.conf" "$HOME/.config/tmux/tmux.conf"
 lnk "$D/config/yazi/init.lua" "$HOME/.config/yazi/init.lua"
 lnk "$D/config/yazi/package.toml" "$HOME/.config/yazi/package.toml"
 lnk "$D/config/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"
