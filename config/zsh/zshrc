@@ -184,6 +184,11 @@ bindkey '^[[1;6D' _zle_sel_wleft  # Ctrl+Shift+Left
 bindkey '^[[1;6C' _zle_sel_wright # Ctrl+Shift+Right
 bindkey '^[[1;2H' _zle_sel_home
 bindkey '^[[1;2F' _zle_sel_end
+# Cmd+Shift+arrow selects to the start/end of the line, matching macOS. Ghostty
+# sends modifier 10 (Cmd+Shift) here; plain Cmd+arrow it already translates to
+# ^A/^E itself, so that pair needs no binding. Measured with `cat -v`.
+bindkey '^[[1;10D' _zle_sel_home
+bindkey '^[[1;10C' _zle_sel_end
 
 bindkey '^?' _zle_backspace
 bindkey '^H' _zle_backspace
