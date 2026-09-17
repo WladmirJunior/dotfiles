@@ -1,4 +1,4 @@
-// Phosphor CRT (Retro): Blink Shell theme
+// Phosphor Retro: Blink Shell CRT theme
 // Ported from Ghostty retro profile / Cool Retro Term calibration
 // Green phosphor with calibrated dark green glass background.
 

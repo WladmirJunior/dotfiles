@@ -1,14 +1,16 @@
 # Blink Shell themes
 
-Green-phosphor themes for [Blink Shell](https://blink.sh) (iOS), kept in sync
+Phosphor CRT themes for [Blink Shell](https://blink.sh) (iOS), kept in sync
 with the Ghostty retro profiles in `.dotfiles-private/config/ghostty/`.
 
 | Theme | Ported from | Character |
 |---|---|---|
-| `phosphor-crt.js` | `config-retro-crt` | Full chroma. ANSI keeps real hues, only the default foreground is phosphor green. Matches the cool-retro-term look. |
-| `phosphor-archive.js` | (standalone) | Monochrome. Every ANSI slot flattened to a green tone, so app colors lose separation. |
-
-`phosphor-crt` is the one that matches the Ghostty setup in daily use.
+| `phosphor-retro.js` | `retro` profile | Green phosphor (#8fe6ab / #0e1611) calibrated to Cool Retro Term CRT. |
+| `phosphor-amber.js` | `amber` profile | Amber phosphor (#e9b56e / #18120b) warm phosphor display. |
+| `phosphor-green.js` | `green` profile | Deep green phosphor (#65d998 / #08160f) monochrome terminal. |
+| `phosphor-crt.js` | `retro` profile | Alias matching default retro CRT. |
+| `phosphor-archive.js` | (standalone) | Monochrome vintage green. Every ANSI slot flattened to a green tone. |
+| `tokyonight.js` | TokyoNight | TokyoNight Night modern palette. |
 
 ## Installing a theme
 
@@ -16,9 +18,19 @@ Blink imports themes by URL, not by file copy. In the app:
 
 `config` > Appearance > Themes > `+` > paste the raw URL, then select the theme.
 
-```
-https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/phosphor-crt.js
-```
+CRT profiles:
+- Phosphor Retro:
+  `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/phosphor-retro.js`
+- Phosphor Amber:
+  `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/phosphor-amber.js`
+- Phosphor Green:
+  `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/phosphor-green.js`
+
+Additional themes:
+- TokyoNight:
+  `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/tokyonight.js`
+- Phosphor Archive:
+  `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/phosphor-archive.js`
 
 The URL tracks `main`, so a re-import picks up any later edit. Pin a commit SHA
 in place of `main` to freeze it.
@@ -26,7 +38,7 @@ in place of `main` to freeze it.
 ## Installing the font (separate step)
 
 A theme file sets colors only, so the font is its own import. Blink assigns
-font families **through a CSS stylesheet**, not by taking a font file directly:
+font families through a CSS stylesheet, not by taking a font file directly:
 the "CSS FONT-FAMILY STYLESHEET" field wants the URL of a CSS file whose
 `@font-face` rules point at the actual font files.
 
@@ -64,9 +76,9 @@ woff2_compress TerminessNerdFontMono-Regular.ttf
 # repeat for Bold, Italic, BoldItalic, then move the .woff2 into themes/blink/fonts/
 ```
 
-## Why the two are not merged
+## Why the variations are separate
 
 `phosphor-archive` remaps all 16 ANSI slots to greens, which is what
-cool-retro-term does at `chromaColor 0`. `phosphor-crt` corresponds to
-`chromaColor 1`: the tube tints the phosphor, but the terminal still emits real
-colors. Keeping both documents the difference instead of losing it in a diff.
+cool-retro-term does at `chromaColor 0`. The CRT profiles (`retro`, `amber`,
+`green`) correspond to the calibrated phosphor CRT monitors matching Ghostty.
+Keeping all variations available gives full flexibility on iPad.
