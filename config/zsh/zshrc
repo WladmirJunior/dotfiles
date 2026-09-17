@@ -63,6 +63,7 @@ alias grss='git restore --staged'
 alias gsr='git remote -v'
 alias glg='git log --oneline --graph --decorate'
 alias grbi='git rebase -i'
+alias gf='git fetch'
 alias gfa='git fetch --all --prune'
 function current_branch() { git rev-parse --abbrev-ref HEAD 2>/dev/null; }
 alias ggpull='git pull origin $(current_branch)'
