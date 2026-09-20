@@ -116,6 +116,12 @@ while IFS=$'\t' read -r tool version minos pkg_type bin_list share_flag url_x86 
     continue
   fi
 
+  # Check if tool was disabled by user selection
+  if [ "$tool" = "yabai" ] && [ "${INSTALL_YABAI:-1}" = 0 ]; then
+    echo "  yabai: skipped (disabled by user selection)"
+    continue
+  fi
+
   # Resolve architecture asset
   if [ "$TARGET_ARCH" = "x86_64" ]; then
     download_url="$url_x86"
@@ -270,7 +276,16 @@ EOF
   echo "  ✓ $tool: installed ($version)"
 done < "$MANIFEST"
 
-# 5. Git Availability Check
+# 5. Standalone Terminal (Kitty)
+if [ "${INSTALL_KITTY:-1}" = 1 ]; then
+  if [ -f "$SCRIPT_DIR/install-kitty.sh" ]; then
+    bash "$SCRIPT_DIR/install-kitty.sh"
+  fi
+else
+  echo "  kitty: skipped (disabled by user selection)"
+fi
+
+# 6. Git Availability Check
 if command -v git_usable >/dev/null 2>&1 && git_usable; then
   echo "  ✓ git: available ($(command -v git))"
 else

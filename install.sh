@@ -25,6 +25,9 @@ CLONE_DIR="$HOME/.dotfiles"
 
 # Parse flags (any order) and keep the first non-flag arg as the profile.
 DRY_RUN=0; CHECK_ONLY=0; STATUS_ONLY=0; MAINT_ACTION=""; PROFILE_ARG=""
+FORCE_TUI=""
+INSTALL_KITTY="${INSTALL_KITTY:-1}"
+INSTALL_YABAI="${INSTALL_YABAI:-1}"
 for arg in "$@"; do
   case "$arg" in
     --dry-run|-n) DRY_RUN=1 ;;
@@ -35,11 +38,17 @@ for arg in "$@"; do
     --update)     MAINT_ACTION=update ;;
     --refresh)    MAINT_ACTION=refresh ;;
     --full)       MAINT_ACTION=full ;;
+    --tui)        FORCE_TUI=1 ;;
+    --no-tui)     FORCE_TUI=0 ;;
+    --kitty)      INSTALL_KITTY=1 ;;
+    --no-kitty)   INSTALL_KITTY=0 ;;
+    --yabai)      INSTALL_YABAI=1 ;;
+    --no-yabai)   INSTALL_YABAI=0 ;;
     -*)           echo "Unknown flag: $arg" >&2; exit 2 ;;
     *)            [ -z "$PROFILE_ARG" ] && PROFILE_ARG="$arg" ;;
   esac
 done
-export DRY_RUN
+export DRY_RUN INSTALL_KITTY INSTALL_YABAI
 case ":$PATH:" in
   *:"$HOME/.local/bin":*) ;;
   *) export PATH="$HOME/.local/bin:$PATH" ;;
@@ -313,15 +322,11 @@ fi
 
 [ "$DRY_RUN" = 1 ] || { command -v setup_report_init >/dev/null 2>&1 && setup_report_init public; }
 
-# Fetch the gum fork before the first prompt/banner so the UI renders richly even
-# on a clean machine. Single source of truth for the gum binary lives in lib/ui.sh.
-ui_bootstrap_gum
-
 # A completed setup with no explicit profile is a maintenance run. Do not walk
 # through base packages, authentication and every overlay again. Let the user
 # choose the narrow operation, while --full or an explicit profile preserves
 # the complete bootstrap path.
-if [ -z "$PROFILE_ARG" ] && [ "$CHECK_ONLY" != 1 ] && [ "$STATUS_ONLY" != 1 ] \
+if [ -z "$PROFILE_ARG" ] && [ "$FORCE_TUI" != 1 ] && [ "$CHECK_ONLY" != 1 ] && [ "$STATUS_ONLY" != 1 ] \
    && command -v state_is >/dev/null 2>&1 && state_is public.base complete; then
   if [ -z "$MAINT_ACTION" ] && [ -r /dev/tty ] && command -v choose1 >/dev/null 2>&1; then
     task "Maintenance · choose an action"
@@ -354,19 +359,17 @@ if [ -z "$PROFILE_ARG" ] && [ "$CHECK_ONLY" != 1 ] && [ "$STATUS_ONLY" != 1 ] \
   fi
 fi
 
-# Welcome banner.
-if have_gum; then
-  "$GUM" style --border double --border-foreground $THEME_BORDER --padding "1 3" \
-    --margin "1 0 0 $LAYOUT_MARGIN" --align center --width "$(cwidth)" \
-    "$("$GUM" style --foreground $THEME_PRIMARY --bold 'Welcome to the dotfiles setup')" \
-    "Bootstrapping this machine · apps, shell, dotfiles" || true
-fi
-
-# Resolve the profile. An explicit arg always wins. With no arg: ask interactively
-# when a real terminal is reachable, else fall back by environment (headless ->
-# minimal). We test /dev/tty rather than FD 0 because under `curl | bash` stdin is
-# the script pipe, not the keyboard — but /dev/tty still reaches the terminal.
-if [ -n "$PROFILE_ARG" ]; then
+# Resolve the profile and configuration options.
+# An interactive run on a terminal without an explicit profile (or with --tui)
+# launches the archinstall-style full-screen TUI without requiring gum or external tools.
+if [ "$FORCE_TUI" = 1 ] || { [ -z "$PROFILE_ARG" ] && [ "$FORCE_TUI" != 0 ] && [ -r /dev/tty ] && [ "$HEADLESS" != "yes" ] && { [ -t 1 ] || [ -t 2 ]; }; }; then
+  source "$DOTFILES_DIR/lib/tui.sh"
+  if tui_launch; then
+    PROFILE="${PROFILE:-minimal}"
+  else
+    exit 0
+  fi
+elif [ -n "$PROFILE_ARG" ]; then
   PROFILE="$PROFILE_ARG"
 elif [ -r /dev/tty ] && [ "$HEADLESS" != "yes" ]; then
   task "Choose what to install"
@@ -390,6 +393,23 @@ PROFILE_FILE="$DOTFILES_DIR/profiles/$PROFILE"
 if [ ! -f "$PROFILE_FILE" ]; then
   echo "Unknown profile '$PROFILE'. Available: $(ls "$DOTFILES_DIR/profiles" | tr '\n' ' ')"
   exit 1
+fi
+
+# Fetch gum fork only when not in minimal profile. Minimal profile
+# has zero external dependencies (no brew, no Xcode CLT, no gum).
+if [ "$PROFILE" != "minimal" ]; then
+  ui_bootstrap_gum
+fi
+
+# Welcome banner.
+if have_gum; then
+  "$GUM" style --border double --border-foreground $THEME_BORDER --padding "1 3" \
+    --margin "1 0 0 $LAYOUT_MARGIN" --align center --width "$(cwidth)" \
+    "$("$GUM" style --foreground $THEME_PRIMARY --bold 'Welcome to the dotfiles setup')" \
+    "Bootstrapping this machine · apps, shell, dotfiles" || true
+else
+  banner "Welcome to the dotfiles setup"
+  note "Bootstrapping this machine · profile: $PROFILE"
 fi
 
 note "profile: $PROFILE · OS: $OS_TYPE $ARCH · VM: $IS_VM · headless: $HEADLESS"

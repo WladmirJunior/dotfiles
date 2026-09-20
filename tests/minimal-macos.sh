@@ -389,4 +389,20 @@ echo "$git_env" | grep -q "TEMPLATE_DIR=$TMP_GIT/.local/share/git-2.53.0/share/g
   git_usable
 )
 
+# 4. Standalone optional flags: INSTALL_YABAI=0 and INSTALL_KITTY=0
+out_skip="$(
+  INSTALL_YABAI=0 \
+  INSTALL_KITTY=0 \
+  DRY_RUN=1 \
+  HOME="$TMP_GIT" \
+  OS_TYPE="Darwin" \
+  ARCH="x86_64" \
+  bash "$TMP/dotfiles/scripts/install-darwin-standalone.sh"
+)"
+echo "$out_skip" | grep -q "yabai: skipped (disabled by user selection)"
+echo "$out_skip" | grep -q "kitty: skipped (disabled by user selection)"
+
+# 5. Validate TUI library syntax
+bash -n "$ROOT/lib/tui.sh"
+
 echo "Minimal macOS Intel tests passed."
