@@ -96,6 +96,10 @@ lnk "$D/config/tmux/tmux.conf" "$HOME/.config/tmux/tmux.conf"
 lnk "$D/config/yazi/init.lua" "$HOME/.config/yazi/init.lua"
 lnk "$D/config/yazi/package.toml" "$HOME/.config/yazi/package.toml"
 lnk "$D/config/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"
+if [ -f "$D/config/yabai/yabairc" ]; then
+  lnk "$D/config/yabai/yabairc" "$HOME/.config/yabai/yabairc"
+  [ "${DRY_RUN:-0}" = 1 ] || chmod +x "$D/config/yabai/yabairc" 2>/dev/null || true
+fi
 
 if command -v ya >/dev/null 2>&1; then
   YAZI_PLUGIN="$HOME/.config/yazi/plugins/git.yazi"

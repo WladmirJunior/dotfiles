@@ -323,6 +323,7 @@ DRY_RUN=0 \
 
 [ -f "$TMP/home/.zshrc" ]
 [ -f "$TMP/home/.zshenv" ]
+[ -f "$TMP/home/.config/yabai/yabairc" ]
 
 # -----------------------------------------------------------------------------
 # Test 9: Git wrapper creation and environment execution
