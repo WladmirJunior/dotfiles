@@ -3,15 +3,23 @@
 # Exports: OS_TYPE, ARCH, DISTRO_ID, DISTRO_FAMILY, PACKAGE_MANAGER,
 #          IS_VM, IS_CONTAINER, HEADLESS, INTERACTIVE
 
-OS_TYPE="$(uname)"
-ARCH="$(uname -m)"
+OS_TYPE="${OS_TYPE:-$(uname)}"
+ARCH="${ARCH:-$(uname -m)}"
+case "$ARCH" in
+  x86_64|amd64) ARCH="x86_64" ;;
+  arm64|aarch64) ARCH="arm64" ;;
+esac
 DISTRO_ID=""
 DISTRO_FAMILY=""
 PACKAGE_MANAGER=""
+MACOS_VERSION=""
+MACOS_MAJOR=""
 
 if [ "$OS_TYPE" = "Darwin" ]; then
   DISTRO_ID="macos"
   DISTRO_FAMILY="darwin"
+  MACOS_VERSION="${MACOS_VERSION:-$(sw_vers -productVersion 2>/dev/null || echo "")}"
+  MACOS_MAJOR="${MACOS_MAJOR:-$(echo "$MACOS_VERSION" | cut -d. -f1)}"
   PACKAGE_MANAGER="brew"
 elif [ "$OS_TYPE" = "Linux" ]; then
   # /etc/os-release is the stable distro interface. ID_LIKE lets derivatives
@@ -43,7 +51,13 @@ fi
 IS_VM="no"
 IS_CONTAINER="no"
 if [ "$OS_TYPE" = "Darwin" ]; then
-  MODEL_ID=$(system_profiler SPHardwareDataType 2>/dev/null | awk -F': ' '/Model Identifier/ {print $2}')
+  _sp_bin="$(command -v system_profiler 2>/dev/null || true)"
+  [ -z "$_sp_bin" ] && [ -x /usr/sbin/system_profiler ] && _sp_bin=/usr/sbin/system_profiler
+  if [ -n "$_sp_bin" ]; then
+    MODEL_ID=$("$_sp_bin" SPHardwareDataType 2>/dev/null | awk -F': ' '/Model Identifier/ {print $2}')
+  else
+    MODEL_ID=""
+  fi
   # VirtualMac*: Apple Virtualization.framework (tart, UTM, VirtualBuddy on Apple Silicon).
   case "$MODEL_ID" in
     VirtualMachine*|VirtualMac*|VMware*|Parallels*) IS_VM="yes" ;;
@@ -66,7 +80,27 @@ if [ "$OS_TYPE" = "Linux" ]; then
   fi
 fi
 
-INTERACTIVE="no"
-[ -t 0 ] && INTERACTIVE="yes"
+git_usable() {
+  command -v git >/dev/null 2>&1 || return 1
+  if [ "${OS_TYPE:-$(uname)}" = "Darwin" ]; then
+    local git_path
+    git_path="$(command -v git 2>/dev/null || true)"
+    if [ "$git_path" = "/usr/bin/git" ]; then
+      xcode-select -p >/dev/null 2>&1 || return 1
+    fi
+  fi
+  return 0
+}
 
-export OS_TYPE ARCH DISTRO_ID DISTRO_FAMILY PACKAGE_MANAGER IS_VM IS_CONTAINER HEADLESS INTERACTIVE
+detect_native_tools() {
+  local missing=0
+  for t in curl tar unzip sh; do
+    if ! command -v "$t" >/dev/null 2>&1; then
+      missing=$((missing + 1))
+    fi
+  done
+  return "$missing"
+}
+
+export OS_TYPE ARCH DISTRO_ID DISTRO_FAMILY PACKAGE_MANAGER MACOS_VERSION MACOS_MAJOR IS_VM IS_CONTAINER HEADLESS INTERACTIVE
+export -f git_usable detect_native_tools 2>/dev/null || true

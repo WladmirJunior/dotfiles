@@ -194,11 +194,26 @@ install_cleanup() {
 }
 trap install_cleanup EXIT
 
+brew_env() {
+  [ "$OS_TYPE" = "Darwin" ] || return 0
+  [ "${PROFILE:-${PROFILE_ARG:-}}" = "minimal" ] && return 0
+  for brew_bin in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    [ -x "$brew_bin" ] && eval "$("$brew_bin" shellenv)" && return 0
+  done
+}
+
 # verify_install: post-install health check. Symlinks resolve, core tools on PATH.
 # Run as the final step of a normal install, or standalone via `--check`.
 verify_install() {
   banner "Verify · post-install health check"
-  verify_cmd git; verify_cmd zsh
+  if command -v git_usable >/dev/null 2>&1 && git_usable; then
+    verify_cmd git
+  elif [ "$OS_TYPE" = "Darwin" ] && [ "${PROFILE:-${PROFILE_ARG:-}}" = "minimal" ]; then
+    note "git: not available (CLT not installed; install manually via 'xcode-select --install' when needed)"
+  else
+    verify_cmd git
+  fi
+  verify_cmd zsh
   command -v nvim >/dev/null 2>&1 && verify_cmd nvim
   verify_path "$HOME/.zshrc"
   [ -e "$HOME/.config/nvim/init.lua" ] && verify_link "$HOME/.config/nvim/init.lua"
@@ -284,17 +299,6 @@ if [ "$DRY_RUN" = 1 ]; then
   info "DRY-RUN: actions are announced, not executed."
 fi
 
-# Put Homebrew on PATH for every step. 01-packages may have just installed it, or
-# it may already exist (CI images, re-runs) — either way its shellenv isn't in the
-# orchestrator's env, so later steps (02-shell, 04-apps) would hit
-# `brew: command not found`. Re-evaluated before each step (see the loop) so a
-# brew installed by 01 is visible to 02+.
-brew_env() {
-  [ "$OS_TYPE" = "Darwin" ] || return 0
-  for brew_bin in /opt/homebrew/bin/brew /usr/local/bin/brew; do
-    [ -x "$brew_bin" ] && eval "$("$brew_bin" shellenv)" && return 0
-  done
-}
 brew_env
 
 # --status: drift report only. Placed after brew_env so a Homebrew that is not
@@ -368,6 +372,7 @@ elif [ -r /dev/tty ] && [ "$HEADLESS" != "yes" ]; then
     'pentest · CLI + security tools')"
   PROFILE="${PROFILE%% *}"   # keep the first word (desktop/minimal/pentest)
   PROFILE="${PROFILE:-desktop}"
+  export PROFILE
   note "→ $PROFILE"
 elif [ "$HEADLESS" = "yes" ]; then
   PROFILE="minimal"
@@ -375,6 +380,7 @@ elif [ "$HEADLESS" = "yes" ]; then
 else
   PROFILE="desktop"
 fi
+export PROFILE
 
 PROFILE_FILE="$DOTFILES_DIR/profiles/$PROFILE"
 if [ ! -f "$PROFILE_FILE" ]; then
@@ -511,6 +517,7 @@ fi
 [ "$TX_ENABLED" = 1 ] && tx_commit
 if [ "$DRY_RUN" != 1 ] && command -v state_set >/dev/null 2>&1; then
   state_set public.base complete
+  state_set public.profile "$PROFILE"
 fi
 
 ok "Public setup done (profile: $PROFILE)."
@@ -636,6 +643,12 @@ configure_1password_ssh_agent_linux() {
 # machinery (1Password install, ~/.zshrc.local, ~/.ssh/config, gh credentials).
 if [ "$DRY_RUN" = 1 ]; then
   info "DRY-RUN: skipping the connect & authenticate phase (it changes shell/SSH config)."
+elif [ "${PROFILE:-}" = "minimal" ] && [ "$OS_TYPE" = "Darwin" ]; then
+  # Minimal profile on Darwin avoids Homebrew casks (1Password) and external auth prompts by default.
+  if [ -f "$HOME/.dotfiles-private/install.sh" ]; then
+    note "Applying private overlay with profile minimal..."
+    bash "$HOME/.dotfiles-private/install.sh" minimal || note "private overlay did not complete"
+  fi
 elif [ "$OS_TYPE" = "Darwin" ] && confirm "Authenticate with 1Password now?"; then
   banner "Connect & authenticate · 1Password, GitHub, SSH"
 

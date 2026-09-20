@@ -31,99 +31,105 @@ command -v run >/dev/null 2>&1 || run() { [ "${DRY_RUN:-0}" = 1 ] && { echo "[dr
 echo "[01] CLI packages..."
 
 if [ "$OS_TYPE" = "Darwin" ]; then
-  if ! command -v brew >/dev/null 2>&1; then
-    echo "Installing Homebrew..."
-    # The Homebrew installer reads stdin twice: once for "Press RETURN to
-    # continue" and again when sudo prompts for the password. Under `curl|bash`
-    # stdin is the PIPE carrying our own script, so those reads drain the pipe
-    # and the installer aborts mid-flight (and sudo can never prompt).
-    #
-    # The right fix is to give the installer the TERMINAL as stdin (`< /dev/tty`)
-    # so it reads keystrokes from the keyboard — the RETURN confirm works AND
-    # sudo can prompt for the admin password, without touching our pipe. We only
-    # fall back to NONINTERACTIVE (no prompts, defaults) when there is genuinely
-    # no terminal (real automation: CI, `tart exec`, etc.), where sudo must
-    # already be passwordless or pre-authenticated.
-    if [ "${DRY_RUN:-0}" = 1 ]; then
-      echo "[dry-run] install Homebrew (interactive via /dev/tty, or NONINTERACTIVE if no tty)"
-    else
-      # Record a previously absent prefix first so a failed install can move it
-      # to recoverable trash without touching an existing /usr/local tree.
-      tx_brew_self
-      brew_installer="$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-      if [ -r /dev/tty ]; then
-        /bin/bash -c "$brew_installer" < /dev/tty
+  CURRENT_PROFILE="${PROFILE:-$(state_get public.profile 2>/dev/null || echo "")}"
+  if [ "$CURRENT_PROFILE" = "minimal" ]; then
+    echo "[01] Minimal profile on macOS: installing verified standalone CLI binaries..."
+    run bash "${DOTFILES_DIR:?}/scripts/install-darwin-standalone.sh"
+  else
+    if ! command -v brew >/dev/null 2>&1; then
+      echo "Installing Homebrew..."
+      # The Homebrew installer reads stdin twice: once for "Press RETURN to
+      # continue" and again when sudo prompts for the password. Under `curl|bash`
+      # stdin is the PIPE carrying our own script, so those reads drain the pipe
+      # and the installer aborts mid-flight (and sudo can never prompt).
+      #
+      # The right fix is to give the installer the TERMINAL as stdin (`< /dev/tty`)
+      # so it reads keystrokes from the keyboard — the RETURN confirm works AND
+      # sudo can prompt for the admin password, without touching our pipe. We only
+      # fall back to NONINTERACTIVE (no prompts, defaults) when there is genuinely
+      # no terminal (real automation: CI, `tart exec`, etc.), where sudo must
+      # already be passwordless or pre-authenticated.
+      if [ "${DRY_RUN:-0}" = 1 ]; then
+        echo "[dry-run] install Homebrew (interactive via /dev/tty, or NONINTERACTIVE if no tty)"
       else
-        env -u INTERACTIVE NONINTERACTIVE=1 /bin/bash -c "$brew_installer"
+        # Record a previously absent prefix first so a failed install can move it
+        # to recoverable trash without touching an existing /usr/local tree.
+        tx_brew_self
+        brew_installer="$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        if [ -r /dev/tty ]; then
+          /bin/bash -c "$brew_installer" < /dev/tty
+        else
+          env -u INTERACTIVE NONINTERACTIVE=1 /bin/bash -c "$brew_installer"
+        fi
+        if [ -x /opt/homebrew/bin/brew ]; then brew_bin=/opt/homebrew/bin/brew
+        elif [ -x /usr/local/bin/brew ]; then brew_bin=/usr/local/bin/brew
+        else brew_bin=""
+        fi
+        [ -z "$brew_bin" ] || eval "$("$brew_bin" shellenv)"
       fi
-      if [ -x /opt/homebrew/bin/brew ]; then brew_bin=/opt/homebrew/bin/brew
-      elif [ -x /usr/local/bin/brew ]; then brew_bin=/usr/local/bin/brew
-      else brew_bin=""
-      fi
-      [ -z "$brew_bin" ] || eval "$("$brew_bin" shellenv)"
     fi
-  fi
 
-  # If brew install left the directory but no binary (the symptom of an
-  # interrupted install), fail. When the prefix did not pre-exist (recorded by
-  # tx_brew_self above), the orchestrator's rollback moves it to recoverable
-  # trash so the next run starts clean. A pre-existing prefix (e.g. /usr/local
-  # on Intel macs) is never recorded, so rollback leaves it in place.
-  if [ "${DRY_RUN:-0}" != 1 ] && ! command -v brew >/dev/null 2>&1; then
-    echo "[01] ERROR: brew missing after install attempt." >&2
-    exit 1
-  fi
+    # If brew install left the directory but no binary (the symptom of an
+    # interrupted install), fail. When the prefix did not pre-exist (recorded by
+    # tx_brew_self above), the orchestrator's rollback moves it to recoverable
+    # trash so the next run starts clean. A pre-existing prefix (e.g. /usr/local
+    # on Intel macs) is never recorded, so rollback leaves it in place.
+    if [ "${DRY_RUN:-0}" != 1 ] && ! command -v brew >/dev/null 2>&1; then
+      echo "[01] ERROR: brew missing after install attempt." >&2
+      exit 1
+    fi
 
-  # Install only missing formulae and upgrade only managed formulae that are
-  # outdated. This keeps repeat runs quiet and ensures rollback records only
-  # packages introduced by the current run.
-  # coreutils: GNU userland. Provides `timeout` (BSD macOS lacks it), which the
-  # Claude Code harness pushes scripts toward after it blocked foreground `sleep`.
-  # 03-dotfiles symlinks gtimeout -> ~/.local/bin/timeout so the bare name works.
-  # freeze lives in the charmbracelet tap (the core "freeze" name is an unrelated cask).
-  BREW_PKGS="$(package_catalog core brew)"
-  # tlrc and tldr both ship a `tldr` binary; a legacy `tldr` install (older setups)
-  # makes `brew install tlrc` abort with a conflict. Drop it first so tlrc wins.
-  if [ "${DRY_RUN:-0}" != 1 ] && brew list --formula 2>/dev/null | grep -qx tldr; then
-    # This removes a PRE-EXISTING package, so record its reinstall as the undo
-    # before touching it; rollback then puts tldr back instead of losing it.
-    tx_run "brew_replace:tldr" brew install tldr -- true
-    run brew unlink tldr
-    run brew uninstall tldr
-  fi
-  # gum is NOT installed here: the UI uses our fork binary (table --width/
-  # --border-row), fetched by ui_bootstrap_gum in install.sh. See lib/ui.sh.
-  brew_log="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/install/homebrew.log"
-  # shellcheck disable=SC2086
-  brew_maintain_formulae "$brew_log" "Homebrew packages" $BREW_PKGS || exit $?
-  if [ "${DRY_RUN:-0}" != 1 ]; then
-    [ -n "$BREW_MISSING" ] && echo "  ✓ Homebrew packages installed"
-    [ -n "$BREW_UPGRADE" ] && echo "  ✓ Homebrew packages updated"
-    [ -n "$BREW_MISSING$BREW_UPGRADE" ] || echo "  ✓ Homebrew packages are current"
-  fi
+    # Install only missing formulae and upgrade only managed formulae that are
+    # outdated. This keeps repeat runs quiet and ensures rollback records only
+    # packages introduced by the current run.
+    # coreutils: GNU userland. Provides `timeout` (BSD macOS lacks it), which the
+    # Claude Code harness pushes scripts toward after it blocked foreground `sleep`.
+    # 03-dotfiles symlinks gtimeout -> ~/.local/bin/timeout so the bare name works.
+    # freeze lives in the charmbracelet tap (the core "freeze" name is an unrelated cask).
+    BREW_PKGS="$(package_catalog core brew)"
+    # tlrc and tldr both ship a `tldr` binary; a legacy `tldr` install (older setups)
+    # makes `brew install tlrc` abort with a conflict. Drop it first so tlrc wins.
+    if [ "${DRY_RUN:-0}" != 1 ] && brew list --formula 2>/dev/null | grep -qx tldr; then
+      # This removes a PRE-EXISTING package, so record its reinstall as the undo
+      # before touching it; rollback then puts tldr back instead of losing it.
+      tx_run "brew_replace:tldr" brew install tldr -- true
+      run brew unlink tldr
+      run brew uninstall tldr
+    fi
+    # gum is NOT installed here: the UI uses our fork binary (table --width/
+    # --border-row), fetched by ui_bootstrap_gum in install.sh. See lib/ui.sh.
+    brew_log="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/install/homebrew.log"
+    # shellcheck disable=SC2086
+    brew_maintain_formulae "$brew_log" "Homebrew packages" $BREW_PKGS || exit $?
+    if [ "${DRY_RUN:-0}" != 1 ]; then
+      [ -n "$BREW_MISSING" ] && echo "  ✓ Homebrew packages installed"
+      [ -n "$BREW_UPGRADE" ] && echo "  ✓ Homebrew packages updated"
+      [ -n "$BREW_MISSING$BREW_UPGRADE" ] || echo "  ✓ Homebrew packages are current"
+    fi
 
-  # Optional Neovim toolchain (LSP servers and formatters). The nvim config
-  # enables each one only when its binary exists, so skipping any is safe.
-  # Interactive multi-select; already-installed ones are filtered out. With no
-  # TTY (CI, tart exec) `pick` degrades to 'none' and the step moves on.
-  NVIM_OPT_PKGS="$(package_catalog nvim-optional brew)"
-  if [ "${DRY_RUN:-0}" != 1 ] && command -v pick >/dev/null 2>&1; then
-    nvim_opt_missing=""
-    for pkg in $NVIM_OPT_PKGS; do
-      command -v "$(basename "$pkg" | sed 's/-native$//')" >/dev/null 2>&1 \
-        || nvim_opt_missing="$nvim_opt_missing $pkg"
-    done
-    if [ -n "$nvim_opt_missing" ]; then
-      # shellcheck disable=SC2086
-      PICK_SELECTED="$(echo $nvim_opt_missing | tr ' ' ',')"
-      # `|| true`: with no usable TTY, pick/gum fails; degrade to installing
-      # nothing instead of aborting the whole step over an optional extra.
-      # shellcheck disable=SC2086
-      picked=$(pick "Optional Neovim LSPs/formatters" $nvim_opt_missing || true)
-      if [ "$picked" != none ] && [ -n "$picked" ]; then
-        picked_pkgs="$(echo "$picked" | tr ',' ' ')"
+    # Optional Neovim toolchain (LSP servers and formatters). The nvim config
+    # enables each one only when its binary exists, so skipping any is safe.
+    # Interactive multi-select; already-installed ones are filtered out. With no
+    # TTY (CI, tart exec) `pick` degrades to 'none' and the step moves on.
+    NVIM_OPT_PKGS="$(package_catalog nvim-optional brew)"
+    if [ "${DRY_RUN:-0}" != 1 ] && command -v pick >/dev/null 2>&1; then
+      nvim_opt_missing=""
+      for pkg in $NVIM_OPT_PKGS; do
+        command -v "$(basename "$pkg" | sed 's/-native$//')" >/dev/null 2>&1 \
+          || nvim_opt_missing="$nvim_opt_missing $pkg"
+      done
+      if [ -n "$nvim_opt_missing" ]; then
         # shellcheck disable=SC2086
-        brew_install_formulae "$brew_log" "optional Neovim tools" $picked_pkgs
+        PICK_SELECTED="$(echo $nvim_opt_missing | tr ' ' ',')"
+        # `|| true`: with no usable TTY, pick/gum fails; degrade to installing
+        # nothing instead of aborting the whole step over an optional extra.
+        # shellcheck disable=SC2086
+        picked=$(pick "Optional Neovim LSPs/formatters" $nvim_opt_missing || true)
+        if [ "$picked" != none ] && [ -n "$picked" ]; then
+          picked_pkgs="$(echo "$picked" | tr ',' ' ')"
+          # shellcheck disable=SC2086
+          brew_install_formulae "$brew_log" "optional Neovim tools" $picked_pkgs
+        fi
       fi
     fi
   fi
@@ -258,8 +264,12 @@ fi
 if [ "${want_tmux:-no}" = yes ]; then
   case "$OS_TYPE:${PACKAGE_MANAGER:-}" in
     Darwin:*)
-      [ "${DRY_RUN:-0}" != 1 ] && tx_brew_install tmux
-      run brew install tmux
+      if [ "${CURRENT_PROFILE:-}" = "minimal" ]; then
+        echo "  tmux: skipped in minimal profile on macOS (requires compilation or Homebrew)"
+      else
+        [ "${DRY_RUN:-0}" != 1 ] && tx_brew_install tmux
+        run brew install tmux
+      fi
       ;;
     Linux:pacman)
       [ "${DRY_RUN:-0}" != 1 ] && tx_pacman_install tmux

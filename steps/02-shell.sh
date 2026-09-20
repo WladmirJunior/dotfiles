@@ -23,9 +23,15 @@ echo "[02] Shell (fzf, zsh plugins)..."
 # --no-update-rc instead of --all: --all also appends a source line to ~/.zshrc
 # OUTSIDE the transaction journal (rollback would leave it behind). The repo's
 # zshrc already sources ~/.fzf.zsh, so the rc edit is redundant anyway.
-if [ "$OS_TYPE" = "Darwin" ]; then
+CURRENT_PROFILE="${PROFILE:-$(state_get public.profile 2>/dev/null || echo "")}"
+if [ "$OS_TYPE" = "Darwin" ] && [ "$CURRENT_PROFILE" != "minimal" ] && command -v brew >/dev/null 2>&1 && [ -x "$(brew --prefix 2>/dev/null)/opt/fzf/install" ]; then
   [ "${DRY_RUN:-0}" != 1 ] && tx_created_path "$HOME/.fzf.zsh"
   run "$(brew --prefix)/opt/fzf/install" --key-bindings --completion --no-update-rc --no-bash --no-fish --no-nushell
+elif fzf --zsh >/dev/null 2>&1; then
+  if [ "${DRY_RUN:-0}" = 1 ]; then echo "[dry-run] fzf --zsh > ~/.fzf.zsh"; else
+    tx_created_path "$HOME/.fzf.zsh"
+    fzf --zsh > ~/.fzf.zsh
+  fi
 else
   # `|| true`: no fzf installer found is a valid outcome (the elif/else below
   # handle it); under pipefail the empty grep would otherwise abort the step.
@@ -33,11 +39,6 @@ else
   if [ -n "$FZF_INSTALL" ]; then
     [ "${DRY_RUN:-0}" != 1 ] && tx_created_path "$HOME/.fzf.zsh"
     run bash "$FZF_INSTALL" --key-bindings --completion --no-update-rc --no-bash --no-fish --no-nushell
-  elif fzf --zsh >/dev/null 2>&1; then
-    if [ "${DRY_RUN:-0}" = 1 ]; then echo "[dry-run] fzf --zsh > ~/.fzf.zsh"; else
-      tx_created_path "$HOME/.fzf.zsh"
-      fzf --zsh > ~/.fzf.zsh
-    fi
   else
     if [ "${DRY_RUN:-0}" = 1 ]; then echo "[dry-run] assemble ~/.fzf.zsh from /usr/share/doc/fzf examples"; else
     tx_created_path "$HOME/.fzf.zsh"
@@ -53,13 +54,36 @@ fi
 # it). In dry-run it must not touch the disk, so fall back to the announce-only run().
 if [ "${DRY_RUN:-0}" = 1 ]; then run mkdir -p ~/.config/zsh-plugins; else tx_mkdir ~/.config/zsh-plugins; fi
 clone_plugin() {
-  # Record the clone's undo (move dest to recoverable trash) before cloning so
-  # a later failure parks exactly what this run fetched. Skip recording in dry-run.
-  [ -d "$2" ] || {
-    echo "  cloning $(basename "$2")..."
-    [ "${DRY_RUN:-0}" != 1 ] && tx_git_clone "$1" "$2"
-    run git clone --depth 1 "$1" "$2"
-  }
+  local repo_url="$1" dest="$2" name
+  name="$(basename "$dest")"
+  [ -d "$dest" ] && return 0
+  echo "  installing $name..."
+  if command -v git_usable >/dev/null 2>&1 && git_usable; then
+    [ "${DRY_RUN:-0}" != 1 ] && tx_git_clone "$repo_url" "$dest"
+    run git clone --depth 1 "$repo_url" "$dest"
+  elif command -v git >/dev/null 2>&1 && [ "$OS_TYPE" != "Darwin" ]; then
+    [ "${DRY_RUN:-0}" != 1 ] && tx_git_clone "$repo_url" "$dest"
+    run git clone --depth 1 "$repo_url" "$dest"
+  else
+    # Fallback to downloading GitHub archive tarball via native curl + tar
+    local slug="${repo_url#https://github.com/}"
+    slug="${slug%.git}"
+    local tgz_url="https://codeload.github.com/$slug/tar.gz/refs/heads/master"
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+      echo "[dry-run] fetch $slug tarball to $dest"
+    else
+      local tmp_tgz
+      tmp_tgz="$(mktemp -t "plugin.${name}.XXXXXX").tar.gz"
+      if curl -fsSL "$tgz_url" -o "$tmp_tgz" 2>/dev/null || curl -fsSL "https://codeload.github.com/$slug/tar.gz/refs/heads/main" -o "$tmp_tgz" 2>/dev/null; then
+        tx_mkdir "$dest"
+        tar -xzf "$tmp_tgz" -C "$dest" --strip-components=1
+        rm -f "$tmp_tgz"
+      else
+        rm -f "$tmp_tgz"
+        echo "  warning: could not download $name; skipping" >&2
+      fi
+    fi
+  fi
 }
 clone_plugin https://github.com/zdharma-continuum/fast-syntax-highlighting.git ~/.config/zsh-plugins/fast-syntax-highlighting
 clone_plugin https://github.com/Aloxaf/fzf-tab.git ~/.config/zsh-plugins/fzf-tab

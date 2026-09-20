@@ -148,15 +148,19 @@ else
   fi
   cp "$D/config/git/gitconfig" "$DELTA"
 fi
-if [ "${DRY_RUN:-0}" = 1 ]; then
-  run git config --global include.path "$DELTA"
-elif git config --global --get-all include.path 2>/dev/null | grep -qxF "$DELTA"; then
-  : # entry pre-exists: nothing to change, and no undo (an unconditional
-    # --unset on rollback would strip config this run never added)
+if command -v git_usable >/dev/null 2>&1 && git_usable || { [ "$OS_TYPE" != "Darwin" ] && command -v git >/dev/null 2>&1; }; then
+  if [ "${DRY_RUN:-0}" = 1 ]; then
+    run git config --global include.path "$DELTA"
+  elif git config --global --get-all include.path 2>/dev/null | grep -qxF "$DELTA"; then
+    : # entry pre-exists: nothing to change, and no undo (an unconditional
+      # --unset on rollback would strip config this run never added)
+  else
+    # Undo: drop the include.path entry we add. Recorded only because the entry
+    # did NOT exist before this run (checked above).
+    tx_run "git_include_path" git config --global --unset include.path "$DELTA" -- git config --global include.path "$DELTA"
+  fi
 else
-  # Undo: drop the include.path entry we add. Recorded only because the entry
-  # did NOT exist before this run (checked above).
-  tx_run "git_include_path" git config --global --unset include.path "$DELTA" -- git config --global include.path "$DELTA"
+  note "git not available; skipped configuring git include.path for $DELTA"
 fi
 # Git identity is intentionally not set here. The old prompt wrote an empty
 # ident on a blank answer, which hard-fails commits; set user.name/user.email
@@ -181,8 +185,14 @@ fi
 # ships it as `gtimeout`. Symlink the bare name into ~/.local/bin so scripts that
 # reach for `timeout` (the Claude Code harness pushes toward it) just work.
 if [ "$OS_TYPE" = "Darwin" ]; then
-  GTIMEOUT="/opt/homebrew/opt/coreutils/libexec/gnubin/timeout"
-  [ -e "$GTIMEOUT" ] || GTIMEOUT="$(command -v gtimeout 2>/dev/null || true)"   # empty is handled below
+  GTIMEOUT=""
+  if command -v gtimeout >/dev/null 2>&1; then
+    GTIMEOUT="$(command -v gtimeout)"
+  elif [ -x "/opt/homebrew/opt/coreutils/libexec/gnubin/timeout" ]; then
+    GTIMEOUT="/opt/homebrew/opt/coreutils/libexec/gnubin/timeout"
+  elif [ -x "/usr/local/opt/coreutils/libexec/gnubin/timeout" ]; then
+    GTIMEOUT="/usr/local/opt/coreutils/libexec/gnubin/timeout"
+  fi
   if [ -n "$GTIMEOUT" ] && [ -e "$GTIMEOUT" ]; then
     lnk "$GTIMEOUT" "$HOME/.local/bin/timeout"
   else
