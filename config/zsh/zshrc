@@ -23,10 +23,15 @@ alias vsh="nvim ~/.zshrc"
 # ─────────────────────────── Modern Unix Tools ───────────────────────────
 alias v='nvim'
 alias vi='nvim'
-alias ls='eza --icons --git --group-directories-first'
-alias ll='eza -l --icons --git --group-directories-first'
-alias la='eza -a --icons --git --group-directories-first'
-alias lt='eza --tree --icons'
+if command -v eza >/dev/null 2>&1; then
+  alias ls='eza --icons --git --group-directories-first'
+  alias ll='eza -l --icons --git --group-directories-first'
+  alias la='eza -a --icons --git --group-directories-first'
+  alias lt='eza --tree --icons'
+else
+  alias ll='ls -la'
+  alias la='ls -A'
+fi
 # Keep classic cat/grep/find intact; use the modern tools by their own names
 # (bat / rg / fd are installed and callable directly).
 alias help='tldr'

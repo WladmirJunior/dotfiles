@@ -49,35 +49,55 @@ fi
 
 # Link configuration file if available
 link_kitty_config() {
-  local conf=""
-  if [ -f "$DOTFILES_PRIVATE_DIR/config/kitty/kitty.conf" ]; then
-    conf="$DOTFILES_PRIVATE_DIR/config/kitty/kitty.conf"
-  elif [ -f "$DOTFILES_DIR/config/kitty/kitty.conf" ]; then
-    conf="$DOTFILES_DIR/config/kitty/kitty.conf"
+  local kitty_src=""
+  if [ -d "$DOTFILES_PRIVATE_DIR/config/kitty" ]; then
+    kitty_src="$DOTFILES_PRIVATE_DIR/config/kitty"
+  elif [ -d "$DOTFILES_DIR/config/kitty" ]; then
+    kitty_src="$DOTFILES_DIR/config/kitty"
   fi
 
-  if [ -n "$conf" ]; then
+  if [ -n "$kitty_src" ]; then
     mkdir -p "$HOME/.config/kitty"
-    ln -sfn "$conf" "$HOME/.config/kitty/kitty.conf"
+    [ -f "$kitty_src/kitty.conf" ] && ln -sfn "$kitty_src/kitty.conf" "$HOME/.config/kitty/kitty.conf"
+    [ -f "$kitty_src/colors.conf" ] && ln -sfn "$kitty_src/colors.conf" "$HOME/.config/kitty/colors.conf"
+    echo "  ✓ Kitty: config linked ($kitty_src -> $HOME/.config/kitty)"
   fi
 }
 
-# Skip if already installed with the correct version and not updating
-if [ -d "$DEST" ] && [ "${DOTFILES_UPDATE:-0}" != 1 ]; then
-  installed_ver=""
-  if [ -x "$PLISTBUDDY_BIN" ] && [ -f "$DEST/Contents/Info.plist" ]; then
-    installed_ver="$($PLISTBUDDY_BIN -c 'Print :CFBundleShortVersionString' "$DEST/Contents/Info.plist" 2>/dev/null || true)"
+install_kitty_font() {
+  local font_dir="$HOME/Library/Fonts"
+  if [ -f "$font_dir/TerminessNerdFont-Regular.ttf" ]; then
+    return 0
   fi
-  if [ "$installed_ver" = "$VERSION" ]; then
-    echo "  Kitty: already installed ($VERSION -> $DEST)"
-    link_kitty_config
-    mkdir -p "$HOME/.local/bin"
-    [ -f "$DEST/Contents/MacOS/kitty" ] && ln -sfn "$DEST/Contents/MacOS/kitty" "$HOME/.local/bin/kitty"
-    [ -f "$DEST/Contents/MacOS/kitten" ] && ln -sfn "$DEST/Contents/MacOS/kitten" "$HOME/.local/bin/kitten"
-    exit 0
+  if [ "${DRY_RUN:-0}" = 1 ]; then
+    echo "  [dry-run] download Terminess Nerd Font -> $font_dir"
+    return 0
+  fi
+
+  echo "  Kitty: downloading Terminess Nerd Font..."
+  local tmp_font
+  tmp_font="$(mktemp -d -t "dotfiles-font.XXXXXX")"
+  local font_url="https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/Terminus.tar.xz"
+  if "$CURL_BIN" -fsSL --retry 3 --max-time 120 -o "$tmp_font/Terminus.tar.xz" "$font_url"; then
+    tar -xf "$tmp_font/Terminus.tar.xz" -C "$tmp_font" 2>/dev/null || true
+    mkdir -p "$font_dir"
+    cp "$tmp_font"/TerminessNerdFont*.ttf "$font_dir/" 2>/dev/null || true
+    echo "  ✓ Terminess Nerd Font: installed ($font_dir)"
   else
-    echo "  Kitty: installed version ($installed_ver) does not match required version for macOS $MACOS_VER ($VERSION); updating..."
+    echo "  warning: failed to download Terminess Nerd Font; continuing" >&2
   fi
+  rm -rf "$tmp_font"
+}
+
+# Skip if already installed and not updating
+if [ -d "$DEST" ] && [ "${DOTFILES_UPDATE:-0}" != 1 ]; then
+  echo "  Kitty: already installed ($DEST)"
+  link_kitty_config
+  install_kitty_font
+  mkdir -p "$HOME/.local/bin"
+  [ -f "$DEST/Contents/MacOS/kitty" ] && ln -sfn "$DEST/Contents/MacOS/kitty" "$HOME/.local/bin/kitty"
+  [ -f "$DEST/Contents/MacOS/kitten" ] && ln -sfn "$DEST/Contents/MacOS/kitten" "$HOME/.local/bin/kitten"
+  exit 0
 fi
 
 if [ "${DRY_RUN:-0}" = 1 ]; then
@@ -157,6 +177,7 @@ mv "$stage" "$DEST"
 
 # Link config
 link_kitty_config
+install_kitty_font
 
 # Link CLI helpers into ~/.local/bin
 mkdir -p "$HOME/.local/bin"
