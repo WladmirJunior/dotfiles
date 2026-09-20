@@ -85,6 +85,10 @@ MANIFEST="${PACKAGES_DARWIN_MANIFEST:-$DOTFILES_DIR/config/packages-darwin-binar
 
 LOCAL_BIN="$HOME/.local/bin"
 LOCAL_SHARE="$HOME/.local/share"
+case ":$PATH:" in
+  *:"$LOCAL_BIN":*) ;;
+  *) PATH="$LOCAL_BIN:$PATH"; export PATH ;;
+esac
 if [ "${DRY_RUN:-0}" = 1 ]; then
   mkdir -p "$LOCAL_BIN" "$LOCAL_SHARE" 2>/dev/null || true
 else
@@ -224,7 +228,22 @@ while IFS=$'\t' read -r tool version minos pkg_type bin_list share_flag url_x86 
       if [ -e "$target_link" ] || [ -L "$target_link" ]; then
         trash_path "$target_link"
       fi
-      tx_symlink "$src_bin" "$target_link"
+      if [ "$tool" = "git" ]; then
+        cat << EOF > "$target_link"
+#!/bin/sh
+GIT_DIR_BASE="$tool_share_dir"
+export GIT_EXEC_PATH="\${GIT_EXEC_PATH:-\$GIT_DIR_BASE/libexec/git-core}"
+export GIT_TEMPLATE_DIR="\${GIT_TEMPLATE_DIR:-\$GIT_DIR_BASE/share/git-core/templates}"
+if [ -f "\$GIT_DIR_BASE/etc/gitconfig" ]; then
+  export GIT_CONFIG_SYSTEM="\${GIT_CONFIG_SYSTEM:-\$GIT_DIR_BASE/etc/gitconfig}"
+fi
+exec "\$GIT_DIR_BASE/bin/$b_name" "\$@"
+EOF
+        chmod +x "$target_link"
+        tx_created_path "$target_link"
+      else
+        tx_symlink "$src_bin" "$target_link"
+      fi
     done
   else
     # Single or standalone binaries
@@ -255,10 +274,8 @@ done < "$MANIFEST"
 if command -v git_usable >/dev/null 2>&1 && git_usable; then
   echo "  ✓ git: available ($(command -v git))"
 else
-  echo "  ! git: no functional Git found on macOS without Command Line Tools."
-  echo "    No official standalone x86_64 binary release exists for macOS without Homebrew or CLT."
-  echo "    To use Git, install Xcode Command Line Tools manually via 'xcode-select --install'"
-  echo "    or place a verified Git binary in ~/.local/bin/git."
+  echo "  ! git: functional Git not detected on PATH ($PATH)."
+  echo "    Check ~/.local/bin/git or install Xcode Command Line Tools via 'xcode-select --install'."
 fi
 
 echo "  Standalone packages configured."

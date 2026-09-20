@@ -35,6 +35,10 @@ if [ "$OS_TYPE" = "Darwin" ]; then
   if [ "$CURRENT_PROFILE" = "minimal" ]; then
     echo "[01] Minimal profile on macOS: installing verified standalone CLI binaries..."
     run bash "${DOTFILES_DIR:?}/scripts/install-darwin-standalone.sh"
+    case ":$PATH:" in
+      *:"$HOME/.local/bin":*) ;;
+      *) export PATH="$HOME/.local/bin:$PATH" ;;
+    esac
   else
     if ! command -v brew >/dev/null 2>&1; then
       echo "Installing Homebrew..."

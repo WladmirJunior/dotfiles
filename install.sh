@@ -40,6 +40,10 @@ for arg in "$@"; do
   esac
 done
 export DRY_RUN
+case ":$PATH:" in
+  *:"$HOME/.local/bin":*) ;;
+  *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac
 
 # Step optionality table: one "step-filename policy" pair per line; policy is
 # required or optional. required: a failure aborts the install (with rollback).

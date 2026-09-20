@@ -105,6 +105,7 @@ while [ "$#" -gt 0 ]; do
     -o) out="$2"; shift 2 ;;
     https://example.com/mocktool-x86_64.tar.gz) url="x86_64"; shift ;;
     https://example.com/mocktool-arm64.tar.gz) url="arm64"; shift ;;
+    https://example.com/mockgit-x86_64.tar.gz) url="git_x86_64"; shift ;;
     *) shift ;;
   esac
 done
@@ -113,6 +114,8 @@ if [ -n "$out" ]; then
     cp "$MOCK_X86_FILE" "$out"
   elif [ "$url" = "arm64" ]; then
     cp "$MOCK_ARM_FILE" "$out"
+  elif [ "$url" = "git_x86_64" ]; then
+    cp "$MOCK_GIT_FILE" "$out"
   else
     exit 1
   fi
@@ -320,5 +323,69 @@ DRY_RUN=0 \
 
 [ -f "$TMP/home/.zshrc" ]
 [ -f "$TMP/home/.zshenv" ]
+
+# -----------------------------------------------------------------------------
+# Test 9: Git wrapper creation and environment execution
+# -----------------------------------------------------------------------------
+GIT_SRC="$TMP/git_src"
+mkdir -p "$GIT_SRC/bin" "$GIT_SRC/libexec/git-core" "$GIT_SRC/share/git-core/templates"
+cat > "$GIT_SRC/bin/git" <<'SH'
+#!/bin/sh
+if [ "$1" = "--print-env" ]; then
+  echo "EXEC_PATH=$GIT_EXEC_PATH"
+  echo "TEMPLATE_DIR=$GIT_TEMPLATE_DIR"
+  exit 0
+fi
+echo "git version 2.53.0"
+SH
+cat > "$GIT_SRC/bin/scalar" <<'SH'
+#!/bin/sh
+echo "scalar mock"
+SH
+chmod +x "$GIT_SRC/bin/"*
+tar -czf "$TMP/mockgit-x86_64.tar.gz" -C "$GIT_SRC" bin libexec share
+GIT_SHA_X86="$(shasum -a 256 "$TMP/mockgit-x86_64.tar.gz" | awk '{print $1}')"
+
+cat > "$TMP/dotfiles/config/git-manifest.tsv" <<EOF
+tool	version	minos	type	bin	share	url_x86_64	sha256_x86_64	url_arm64	sha256_arm64
+git	2.53.0	10.15	tar.gz	bin/git,bin/scalar	yes	https://example.com/mockgit-x86_64.tar.gz	$GIT_SHA_X86	https://example.com/mockgit-x86_64.tar.gz	$GIT_SHA_X86
+EOF
+
+export MOCK_GIT_FILE="$TMP/mockgit-x86_64.tar.gz"
+
+TMP_GIT="$TMP/git_home"
+mkdir -p "$TMP_GIT/.local/bin" "$TMP_GIT/.local/share"
+
+HOME="$TMP_GIT" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XDG_STATE_HOME="$TMP/state_git" \
+DOTFILES_DIR="$TMP/dotfiles" \
+PACKAGES_DARWIN_MANIFEST="$TMP/dotfiles/config/git-manifest.tsv" \
+OS_TYPE="Darwin" \
+ARCH="x86_64" \
+MOCK_MACOS_VERSION="11.6.8" \
+MOCK_CLT_INSTALLED=0 \
+PROFILE="minimal" \
+  bash "$TMP/dotfiles/scripts/install-darwin-standalone.sh"
+
+# Assertions:
+# 1. ~/.local/bin/git and scalar exist and are shell wrapper scripts (not symlinks)
+[ -f "$TMP_GIT/.local/bin/git" ]
+[ ! -L "$TMP_GIT/.local/bin/git" ]
+[ -f "$TMP_GIT/.local/bin/scalar" ]
+[ ! -L "$TMP_GIT/.local/bin/scalar" ]
+
+# 2. Wrapper sets GIT_EXEC_PATH and GIT_TEMPLATE_DIR
+git_env="$("$TMP_GIT/.local/bin/git" --print-env)"
+echo "$git_env" | grep -q "EXEC_PATH=$TMP_GIT/.local/share/git-2.53.0/libexec/git-core"
+echo "$git_env" | grep -q "TEMPLATE_DIR=$TMP_GIT/.local/share/git-2.53.0/share/git-core/templates"
+
+# 3. git_usable detects this git without CLT
+(
+  export PATH="$TMP_GIT/.local/bin:$TMP/bin:/usr/bin:/bin"
+  export OS_TYPE="Darwin"
+  source "$TMP/dotfiles/lib/detect.sh"
+  git_usable
+)
 
 echo "Minimal macOS Intel tests passed."
