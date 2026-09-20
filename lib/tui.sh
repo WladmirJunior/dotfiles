@@ -66,10 +66,12 @@ tui_launch() {
     local cols lines
     cols=$(tput cols 2>/dev/null || echo 80)
     lines=$(tput lines 2>/dev/null || echo 24)
-    [ "$cols" -gt 80 ] && cols=80
+    [ "$cols" -lt 50 ] && cols=50
+    [ "$lines" -lt 18 ] && lines=18
 
+    # Proportional width: expand across terminal width with a 2-char margin
     local inner_width=$((cols - 4))
-    [ "$inner_width" -lt 40 ] && inner_width=40
+    [ "$inner_width" -lt 46 ] && inner_width=46
 
     local border
     border=$(printf '%*s' "$inner_width" '' | tr ' ' '─')
@@ -77,30 +79,37 @@ tui_launch() {
     # Move cursor to top-left and clear
     printf '\033[H\033[2J' >/dev/tty
 
-    # 1. Header Box
-    printf "${c_cyan}  ┌%s┐${c_reset}\n" "$border" >/dev/tty
-    printf "${c_cyan}  │${c_bold}%*s%-*s${c_reset}${c_cyan}│${c_reset}\n" \
-      $(( (inner_width - 25) / 2 )) "" $(( inner_width - (inner_width - 25) / 2 )) "DOTFILES ARCHINSTALL MENU" >/dev/tty
-    printf "${c_cyan}  │${c_dim}%*s%-*s${c_reset}${c_cyan}│${c_reset}\n" \
-      $(( (inner_width - 34) / 2 )) "" $(( inner_width - (inner_width - 34) / 2 )) "Full-Screen Configuration Interface" >/dev/tty
-    printf "${c_cyan}  └%s┘${c_reset}\n" "$border" >/dev/tty
+    local rendered_lines=0
 
-    # 2. System Status Badge
+    # 1. Header Box
+    printf "${c_cyan}  ┌%s┐${c_reset}\n" "$border" >/dev/tty; ((rendered_lines++))
+    printf "${c_cyan}  │${c_bold}%*s%-*s${c_reset}${c_cyan}│${c_reset}\n" \
+      $(( (inner_width - 25) / 2 )) "" $(( inner_width - (inner_width - 25) / 2 )) "DOTFILES ARCHINSTALL MENU" >/dev/tty; ((rendered_lines++))
+    printf "${c_cyan}  │${c_dim}%*s%-*s${c_reset}${c_cyan}│${c_reset}\n" \
+      $(( (inner_width - 36) / 2 )) "" $(( inner_width - (inner_width - 36) / 2 )) "Full-Screen Configuration Interface" >/dev/tty; ((rendered_lines++))
+
     local sys_desc="OS: $tui_os ($tui_arch)"
     if [ "$is_darwin" -eq 1 ]; then
       local mac_ver
       mac_ver="$(sw_vers -productVersion 2>/dev/null || echo "")"
       [ -n "$mac_ver" ] && sys_desc="$sys_desc • macOS $mac_ver"
     fi
-    printf "  ${c_dim}%s • Standalone / Minimal Engine${c_reset}\n\n" "$sys_desc" >/dev/tty
+    sys_desc="$sys_desc • Standalone / Minimal Engine"
+    local sys_len=${#sys_desc}
+    [ "$sys_len" -ge "$inner_width" ] && sys_desc="${sys_desc:0:$((inner_width - 4))}..."
+    printf "${c_cyan}  │${c_dim}%*s%-*s${c_reset}${c_cyan}│${c_reset}\n" \
+      $(( (inner_width - ${#sys_desc}) / 2 )) "" $(( inner_width - (inner_width - ${#sys_desc}) / 2 )) "$sys_desc" >/dev/tty; ((rendered_lines++))
+    printf "${c_cyan}  └%s┘${c_reset}\n" "$border" >/dev/tty; ((rendered_lines++))
 
-    # 3. Build Menu Item List
-    # We dynamically construct options depending on OS
-    local -a item_keys=() item_labels=() item_descs=()
+    printf "\n" >/dev/tty; ((rendered_lines++))
+
+    # 2. Build Menu Item List
+    local -a item_keys=() item_labels=() item_vals=() item_descs=()
 
     # Option 1: Profile
     item_keys+=("profile")
-    item_labels+=("Profile ........................ [ $tui_profile ]")
+    item_labels+=("1. Profile")
+    item_vals+=("[ $tui_profile ]")
     case "$tui_profile" in
       minimal) item_descs+=("Essential CLI tools without Homebrew or Xcode CLT") ;;
       desktop) item_descs+=("Complete workstation setup with GUI apps & tools") ;;
@@ -111,40 +120,50 @@ tui_launch() {
     if [ "$is_darwin" -eq 1 ]; then
       item_keys+=("kitty")
       if [ "$tui_kitty" -eq 1 ]; then
-        item_labels+=("[*] Standalone Kitty Terminal .... (Enabled)")
-        item_descs+=("Fast GPU terminal with Yazi image protocol support")
+        item_labels+=("2. [*] Standalone Kitty Terminal")
+        item_vals+=("(Enabled)")
+        item_descs+=("Fast GPU terminal with native Yazi image protocol support")
       else
-        item_labels+=("[ ] Standalone Kitty Terminal .... (Disabled)")
+        item_labels+=("2. [ ] Standalone Kitty Terminal")
+        item_vals+=("(Disabled)")
         item_descs+=("Skip installing Kitty.app on this machine")
       fi
 
       item_keys+=("yabai")
       if [ "$tui_yabai" -eq 1 ]; then
-        item_labels+=("[*] Standalone yabai Manager ..... (Enabled)")
+        item_labels+=("3. [*] Standalone yabai Manager")
+        item_vals+=("(Enabled)")
         item_descs+=("Ultra-lightweight tiling window manager (~15MB RAM)")
       else
-        item_labels+=("[ ] Standalone yabai Manager ..... (Disabled)")
+        item_labels+=("3. [ ] Standalone yabai Manager")
+        item_vals+=("(Disabled)")
         item_descs+=("Skip installing yabai binary and yabairc")
       fi
     fi
 
     # Dry-run
     item_keys+=("dryrun")
+    local dry_num=2
+    [ "$is_darwin" -eq 1 ] && dry_num=4
     if [ "$tui_dryrun" -eq 1 ]; then
-      item_labels+=("[*] Dry-run Simulation .......... (Simulate only)")
+      item_labels+=("${dry_num}. [*] Dry-run Simulation")
+      item_vals+=("(Simulate only)")
       item_descs+=("Announce actions without modifying system state")
     else
-      item_labels+=("[ ] Dry-run Simulation .......... (Disabled)")
+      item_labels+=("${dry_num}. [ ] Dry-run Simulation")
+      item_vals+=("(Disabled)")
       item_descs+=("Execute real changes and package installations")
     fi
 
     # Actions
     item_keys+=("install")
     item_labels+=("▶  Install / Apply Configuration")
+    item_vals+=("")
     item_descs+=("Proceed with installation using selected parameters")
 
     item_keys+=("exit")
     item_labels+=("✖  Cancel / Exit Installer")
+    item_vals+=("")
     item_descs+=("Exit cleanly without modifying the system")
 
     local count=${#item_keys[@]}
@@ -153,36 +172,72 @@ tui_launch() {
     [ "$tui_cursor" -ge "$count" ] && tui_cursor=$((count - 1))
     [ "$tui_cursor" -lt 0 ] && tui_cursor=0
 
-    # 4. Render Menu Items
+    # 3. Render Menu Items with dynamic dot-leaders spanning the full width
+    local content_width=$((inner_width - 4))
     local i
     for ((i=0; i<count; i++)); do
-      # Separator before action buttons
       if [ "${item_keys[i]}" = "install" ]; then
-        printf "  ${c_cyan}  %s${c_reset}\n" "$(printf '%*s' $((inner_width - 4)) '' | tr ' ' '─')" >/dev/tty
+        printf "  ${c_cyan}  %s${c_reset}\n" "$(printf '%*s' "$content_width" '' | tr ' ' '─')" >/dev/tty; ((rendered_lines++))
       fi
 
-      local prefix="    "
-      local num_str="$((i + 1)). "
-      if [ "${item_keys[i]}" = "install" ] || [ "${item_keys[i]}" = "exit" ]; then
-        num_str="   "
-      fi
+      local lbl="${item_labels[i]}"
+      local val="${item_vals[i]}"
 
-      if [ "$i" -eq "$tui_cursor" ]; then
-        printf "  ${c_cyan}${c_bold}${c_rev} ▸ %s%-58s ${c_reset}\n" "$num_str" "${item_labels[i]}" >/dev/tty
-        printf "      ${c_cyan}↳ %s${c_reset}\n" "${item_descs[i]}" >/dev/tty
+      if [ -n "$val" ]; then
+        local label_len=${#lbl}
+        local val_len=${#val}
+        local dots_len=$(( content_width - label_len - val_len - 6 ))
+        [ "$dots_len" -lt 2 ] && dots_len=2
+        local dots=$(printf '%*s' "$dots_len" '' | tr ' ' '.')
+
+        if [ "$i" -eq "$tui_cursor" ]; then
+          local line_str=$(printf "▸ %s %s %s" "$lbl" "$dots" "$val")
+          printf "    ${c_cyan}${c_bold}${c_rev} %-*s ${c_reset}\n" "$((content_width - 2))" "$line_str" >/dev/tty; ((rendered_lines++))
+        else
+          printf "      %s ${c_dim}%s${c_reset} %s\n" "$lbl" "$dots" "$val" >/dev/tty; ((rendered_lines++))
+        fi
       else
-        printf "    %s%-58s\n" "$num_str" "${item_labels[i]}" >/dev/tty
+        # Action buttons
+        if [ "$i" -eq "$tui_cursor" ]; then
+          printf "    ${c_cyan}${c_bold}${c_rev} ▸ %-*s ${c_reset}\n" "$((content_width - 4))" "$lbl" >/dev/tty; ((rendered_lines++))
+        else
+          printf "        %s\n" "$lbl" >/dev/tty; ((rendered_lines++))
+        fi
       fi
     done
 
-    # 5. Footer Bar
-    printf "\n  ${c_cyan}├%s┤${c_reset}\n" "$border" >/dev/tty
-    if [ "$is_darwin" -eq 1 ]; then
-      printf "  ${c_dim} [↑/↓/j/k] Navigate  •  [Space/Enter] Toggle  •  [1-4] Jump  •  [i] Install  •  [q] Quit${c_reset}\n" >/dev/tty
+    # 4. Dynamic Vertical Padding down to the footer/help area
+    # Help box (3 lines) + Footer separator & text (2 lines) = 5 lines at bottom
+    local bottom_lines=6
+    local pad_lines=$(( lines - rendered_lines - bottom_lines ))
+    [ "$pad_lines" -lt 1 ] && pad_lines=1
+    for ((p=0; p<pad_lines; p++)); do
+      printf "\n" >/dev/tty; ((rendered_lines++))
+    done
+
+    # 5. Contextual Help Box (Fixed position above footer)
+    local active_desc="${item_descs[tui_cursor]}"
+    local help_border_fill=$(( inner_width - 10 ))
+    [ "$help_border_fill" -lt 2 ] && help_border_fill=2
+    local help_border=$(printf '%*s' "$help_border_fill" '' | tr ' ' '─')
+
+    printf "  ${c_cyan}┌─ Help ─%s┐${c_reset}\n" "$help_border" >/dev/tty; ((rendered_lines++))
+    printf "  ${c_cyan}│${c_reset}  ${c_dim}ℹ %-*s${c_reset}${c_cyan}│${c_reset}\n" "$((inner_width - 5))" "$active_desc" >/dev/tty; ((rendered_lines++))
+    printf "  ${c_cyan}└%s┘${c_reset}\n" "$border" >/dev/tty; ((rendered_lines++))
+
+    # 6. Footer Bar
+    local footer_text
+    if [ "$inner_width" -ge 86 ]; then
+      footer_text="[↑/↓/j/k] Navigate  •  [Space/Enter] Toggle  •  [1-${dry_num}] Jump  •  [i] Install  •  [q] Quit"
     else
-      printf "  ${c_dim} [↑/↓/j/k] Navigate  •  [Space/Enter] Toggle  •  [1-2] Jump  •  [i] Install  •  [q] Quit${c_reset}\n" >/dev/tty
+      footer_text="[↑/↓] Move • [Space] Toggle • [1-${dry_num}] Jump • [i] Install • [q] Quit"
     fi
+    printf "  ${c_cyan}  %s${c_reset}\n" "$border" >/dev/tty; ((rendered_lines++))
+    printf "    ${c_dim}%s${c_reset}\n" "$footer_text" >/dev/tty; ((rendered_lines++))
   }
+
+  # Redraw automatically on terminal resize (SIGWINCH)
+  trap tui_draw WINCH
 
   # Interactive input loop
   while true; do
@@ -267,6 +322,7 @@ tui_launch() {
     esac
   done
 
+  trap - WINCH
   tui_cleanup
   trap - EXIT INT TERM
 
