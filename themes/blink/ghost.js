@@ -34,41 +34,7 @@ t.prefs_.set('foreground-color', '#59ff8e');
 t.prefs_.set('cursor-color', '#59ff8e');
 t.prefs_.set('cursor-blink', true);
 
-// 3. Emulação dos Shaders CRT via WebKit CSS (Bloom, Scanlines & Vidro Curvo)
-const crtCss = `
-  /* Bloom / Phosphor Glow: halo suave de fósforo */
-  x-row, span {
-    text-shadow: 0 0 2px #59ff8e, 0 0 8px rgba(89, 255, 142, 0.45);
-  }
-
-  /* Scanlines CRT: linhas horizontais alternadas de 1px */
-  x-screen::before {
-    content: " ";
-    display: block;
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: repeating-linear-gradient(
-      0deg,
-      rgba(0, 0, 0, 0.22) 0px,
-      rgba(0, 0, 0, 0.22) 1px,
-      transparent 1px,
-      transparent 2px
-    );
-    pointer-events: none;
-    z-index: 100;
-  }
-
-  /* Vidro Curvo / Vinheta / Luz ambiente CRT */
-  x-screen::after {
-    content: " ";
-    display: block;
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: radial-gradient(circle at center, transparent 65%, rgba(0, 15, 6, 0.45) 100%);
-    box-shadow: inset 0 0 25px rgba(0, 40, 15, 0.6);
-    pointer-events: none;
-    z-index: 101;
-  }
-`;
-
-t.prefs_.set('user-css-text', crtCss);
+// 3. Remove os efeitos CSS invasivos (vinheta nos cantos da janela, scanlines e blur)
+// Em telas Retina mobile, o contraste nativo do painel OLED (#59ff8e sobre #000000)
+// entrega a estetica CRT com nitidez total e sem artefatos de borda.
+t.prefs_.set('user-css-text', '');
