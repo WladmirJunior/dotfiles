@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Switch Kitty CRT themes (retro, ghost, green, amber) ported from Ghostty.
+# Usage: kitty-theme apply <name> | list | current
+set -euo pipefail
+
+THEMES=("retro" "ghost" "green" "amber")
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/kitty"
+THEME_FILE="$CONFIG_DIR/theme.conf"
+THEMES_DIR="$CONFIG_DIR/themes"
+
+usage() {
+  echo "Uso: kitty-theme apply <amber|ghost|green|retro>"
+  echo "     kitty-theme current"
+  echo "     kitty-theme list"
+  exit 1
+}
+
+cmd="${1:-}"
+
+case "$cmd" in
+  list)
+    printf '%s\n' "${THEMES[@]}"
+    ;;
+  current)
+    if [ -f "$THEME_FILE" ]; then
+      theme="$(grep -E '^include themes/' "$THEME_FILE" | sed -E 's|include themes/(.*)\.conf|\1|' | head -n 1)"
+      echo "${theme:-custom}"
+    else
+      echo "retro"
+    fi
+    ;;
+  apply)
+    name="${2:-}"
+    [ -n "$name" ] || usage
+    valid=0
+    for t in "${THEMES[@]}"; do
+      if [ "$t" = "$name" ]; then valid=1; break; fi
+    done
+    if [ "$valid" -eq 0 ]; then
+      echo "Erro: tema '$name' inválido. Escolha entre: ${THEMES[*]}" >&2
+      exit 1
+    fi
+
+    mkdir -p "$CONFIG_DIR"
+    echo "# Active theme included by kitty.conf" > "$THEME_FILE"
+    echo "# Managed by kitty-theme CLI" >> "$THEME_FILE"
+    echo "include themes/${name}.conf" >> "$THEME_FILE"
+
+    echo "Tema aplicado: $name"
+
+    # Reload all running kitty instances via SIGUSR1
+    if pgrep -x kitty >/dev/null 2>&1; then
+      killall -SIGUSR1 kitty 2>/dev/null || true
+      echo "Configuração do Kitty recarregada nas janelas abertas."
+    fi
+    ;;
+  help|--help|-h|"")
+    usage
+    ;;
+  *)
+    echo "Comando desconhecido: $cmd" >&2
+    usage
+    ;;
+esac

@@ -59,8 +59,20 @@ link_kitty_config() {
   if [ -n "$kitty_src" ]; then
     mkdir -p "$HOME/.config/kitty"
     [ -f "$kitty_src/kitty.conf" ] && ln -sfn "$kitty_src/kitty.conf" "$HOME/.config/kitty/kitty.conf"
-    [ -f "$kitty_src/colors.conf" ] && ln -sfn "$kitty_src/colors.conf" "$HOME/.config/kitty/colors.conf"
-    echo "  ✓ Kitty: config linked ($kitty_src -> $HOME/.config/kitty)"
+    if [ ! -f "$HOME/.config/kitty/theme.conf" ] && [ -f "$kitty_src/theme.conf" ]; then
+      ln -sfn "$kitty_src/theme.conf" "$HOME/.config/kitty/theme.conf"
+    elif [ -L "$HOME/.config/kitty/theme.conf" ] && [ -f "$kitty_src/theme.conf" ]; then
+      ln -sfn "$kitty_src/theme.conf" "$HOME/.config/kitty/theme.conf"
+    fi
+    [ -d "$kitty_src/themes" ] && ln -sfn "$kitty_src/themes" "$HOME/.config/kitty/themes"
+    [ -d "$kitty_src/shaders" ] && ln -sfn "$kitty_src/shaders" "$HOME/.config/kitty/shaders"
+    rm -f "$HOME/.config/kitty/colors.conf" 2>/dev/null || true
+    echo "  ✓ Kitty: config, themes and shaders linked ($kitty_src -> $HOME/.config/kitty)"
+  fi
+
+  if [ -f "$SCRIPT_DIR/kitty-theme" ]; then
+    mkdir -p "$HOME/.local/bin"
+    ln -sfn "$SCRIPT_DIR/kitty-theme" "$HOME/.local/bin/kitty-theme"
   fi
 }
 
@@ -87,6 +99,14 @@ install_kitty_font() {
     echo "  warning: failed to download Terminess Nerd Font; continuing" >&2
   fi
   rm -rf "$tmp_font"
+
+  # Install Departure Mono if vendored in dotfiles/fonts
+  local departure_src="$DOTFILES_DIR/fonts/departure-mono/DepartureMono-1.500.otf"
+  if [ -f "$departure_src" ] && [ ! -f "$font_dir/DepartureMono-1.500.otf" ]; then
+    mkdir -p "$font_dir"
+    cp "$departure_src" "$font_dir/" 2>/dev/null || true
+    echo "  ✓ Departure Mono: installed ($font_dir)"
+  fi
 }
 
 # Skip if already installed and not updating
