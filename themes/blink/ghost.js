@@ -34,7 +34,27 @@ t.prefs_.set('foreground-color', '#59ff8e');
 t.prefs_.set('cursor-color', '#59ff8e');
 t.prefs_.set('cursor-blink', true);
 
-// 3. Remove os efeitos CSS invasivos (vinheta nos cantos da janela, scanlines e blur)
-// Em telas Retina mobile, o contraste nativo do painel OLED (#59ff8e sobre #000000)
-// entrega a estetica CRT com nitidez total e sem artefatos de borda.
-t.prefs_.set('user-css-text', '');
+// 3. Efeitos CRT calibrados (sem bordas/cantos marcados e com texto 100% legivel)
+const crtCss = `
+  /* Phosphor Bloom calibrado: núcleo vívido com halo controlado */
+  x-row, span {
+    text-shadow: 0 0 1px #59ff8e, 0 0 3.5px rgba(89, 255, 142, 0.45);
+  }
+
+  /* Scanlines CRT contínuas em tela cheia (sem cortar caracteres nem cantos marcados) */
+  x-scrollport::before {
+    content: " ";
+    display: block;
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(
+      rgba(0, 0, 0, 0) 50%,
+      rgba(0, 0, 0, 0.22) 50%
+    );
+    background-size: 100% 3px;
+    pointer-events: none;
+    z-index: 10;
+  }
+`;
+
+t.prefs_.set('user-css-text', crtCss);
