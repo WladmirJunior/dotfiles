@@ -12,9 +12,23 @@ APPLICATIONS_DIR="${APPLICATIONS_DIR:-/Applications}"
 DEST="$APPLICATIONS_DIR/kitty.app"
 EXPECTED_BUNDLE_ID="net.kovidgoyal.kitty"
 
-VERSION="${KITTY_VERSION:-0.48.2}"
+SW_VERS_BIN="${SW_VERS_BIN:-sw_vers}"
+MACOS_VER="$($SW_VERS_BIN -productVersion 2>/dev/null || echo "11.0")"
+MACOS_MAJ="${MACOS_VER%%.*}"
+
+# Kitty 0.46.0+ bumped LSMinimumSystemVersion to macOS 12 (Monterey).
+# For macOS 11 (Big Sur), the latest functional release is v0.45.0.
+if [ "$MACOS_MAJ" -lt 12 ]; then
+  DEFAULT_KITTY_VERSION="0.45.0"
+  DEFAULT_KITTY_SHA="c0e2afb7580fcf1f4cad410d525068c9d082679c3106a743962610fade4d7381"
+else
+  DEFAULT_KITTY_VERSION="0.48.2"
+  DEFAULT_KITTY_SHA="f804f58ee4b69c76f84eb3281e140748269a63f3f4a816015a8dec2a06d2b195"
+fi
+
+VERSION="${KITTY_VERSION:-$DEFAULT_KITTY_VERSION}"
+EXPECTED_SHA="${KITTY_SHA256:-$DEFAULT_KITTY_SHA}"
 DOWNLOAD_URL="${KITTY_DOWNLOAD_URL:-https://github.com/kovidgoyal/kitty/releases/download/v${VERSION}/kitty-${VERSION}.dmg}"
-EXPECTED_SHA="${KITTY_SHA256:-f804f58ee4b69c76f84eb3281e140748269a63f3f4a816015a8dec2a06d2b195}"
 
 CURL_BIN="${CURL_BIN:-curl}"
 HDIUTIL_BIN="${HDIUTIL_BIN:-hdiutil}"
@@ -48,14 +62,22 @@ link_kitty_config() {
   fi
 }
 
-# Skip if already installed and not updating
+# Skip if already installed with the correct version and not updating
 if [ -d "$DEST" ] && [ "${DOTFILES_UPDATE:-0}" != 1 ]; then
-  echo "  Kitty: already installed ($DEST)"
-  link_kitty_config
-  mkdir -p "$HOME/.local/bin"
-  [ -f "$DEST/Contents/MacOS/kitty" ] && ln -sfn "$DEST/Contents/MacOS/kitty" "$HOME/.local/bin/kitty"
-  [ -f "$DEST/Contents/MacOS/kitten" ] && ln -sfn "$DEST/Contents/MacOS/kitten" "$HOME/.local/bin/kitten"
-  exit 0
+  installed_ver=""
+  if [ -x "$PLISTBUDDY_BIN" ] && [ -f "$DEST/Contents/Info.plist" ]; then
+    installed_ver="$($PLISTBUDDY_BIN -c 'Print :CFBundleShortVersionString' "$DEST/Contents/Info.plist" 2>/dev/null || true)"
+  fi
+  if [ "$installed_ver" = "$VERSION" ]; then
+    echo "  Kitty: already installed ($VERSION -> $DEST)"
+    link_kitty_config
+    mkdir -p "$HOME/.local/bin"
+    [ -f "$DEST/Contents/MacOS/kitty" ] && ln -sfn "$DEST/Contents/MacOS/kitty" "$HOME/.local/bin/kitty"
+    [ -f "$DEST/Contents/MacOS/kitten" ] && ln -sfn "$DEST/Contents/MacOS/kitten" "$HOME/.local/bin/kitten"
+    exit 0
+  else
+    echo "  Kitty: installed version ($installed_ver) does not match required version for macOS $MACOS_VER ($VERSION); updating..."
+  fi
 fi
 
 if [ "${DRY_RUN:-0}" = 1 ]; then

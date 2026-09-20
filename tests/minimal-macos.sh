@@ -405,4 +405,27 @@ echo "$out_skip" | grep -q "kitty: skipped (disabled by user selection)"
 # 5. Validate TUI library syntax
 bash -n "$ROOT/lib/tui.sh"
 
+# 6. Validate Kitty version selection for macOS 11 vs 12+
+out_kitty_11="$(
+  DRY_RUN=1 \
+  HOME="$TMP_GIT" \
+  APPLICATIONS_DIR="$TMP_GIT/Applications" \
+  SW_VERS_BIN="$TMP/bin/sw_vers" \
+  MOCK_MACOS_VERSION="11.7.11" \
+  PATH="$TMP/bin:/usr/bin:/bin" \
+  bash "$ROOT/scripts/install-kitty.sh"
+)"
+echo "$out_kitty_11" | grep -q "0.45.0"
+
+out_kitty_12="$(
+  DRY_RUN=1 \
+  HOME="$TMP_GIT" \
+  APPLICATIONS_DIR="$TMP_GIT/Applications" \
+  SW_VERS_BIN="$TMP/bin/sw_vers" \
+  MOCK_MACOS_VERSION="12.4.0" \
+  PATH="$TMP/bin:/usr/bin:/bin" \
+  bash "$ROOT/scripts/install-kitty.sh"
+)"
+echo "$out_kitty_12" | grep -q "0.48.2"
+
 echo "Minimal macOS Intel tests passed."
