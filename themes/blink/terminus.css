@@ -1,0 +1,41 @@
+/* Terminus — Blink Shell font stylesheet
+ *
+ * Blink assigns font families via CSS, not by importing a font file directly:
+ * the "CSS FONT-FAMILY STYLESHEET" field wants the URL of THIS file.
+ *
+ * Font-Family Name field in the app: Terminus
+ * (it must match the family-name declared below, exactly)
+ *
+ * Source: Terminus TTF 4.49.3 (https://terminus-font.sourceforge.net/),
+ * the plain TTF build already installed on macOS in ~/Library/Fonts.
+ * Kept as .ttf (no woff2 step): the faces are ~500 KB each, small enough
+ * to serve directly from the dotfiles repo.
+ */
+
+@font-face {
+  font-family: "Terminus";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminusTTF-Regular.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Terminus";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminusTTF-Bold.ttf") format("truetype");
+  font-weight: bold;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Terminus";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminusTTF-Italic.ttf") format("truetype");
+  font-weight: normal;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: "Terminus";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminusTTF-Bold-Italic.ttf") format("truetype");
+  font-weight: bold;
+  font-style: italic;
+}
