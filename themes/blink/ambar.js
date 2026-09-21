@@ -54,7 +54,20 @@ const crtCss = `
           pointer-events: none;
           z-index: 10;
         }
-        
+        x-screen::before {
+          content: " ";
+          display: block;
+          position: absolute;
+          top: 0; left: 0; right: 0; bottom: 0;
+          background: linear-gradient(
+            rgba(0, 0, 0, 0) 75%,
+            rgba(0, 0, 0, 0.30) 75%
+          );
+          background-size: 100% 1px;
+          pointer-events: none;
+          z-index: 100;
+        }
+
         .x-scrollport::after, x-scrollport::after {
           content: " ";
           display: block;
@@ -64,6 +77,16 @@ const crtCss = `
                   radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.30) 100%);
           pointer-events: none;
           z-index: 11;
+        }
+        x-screen::after {
+          content: " ";
+          display: block;
+          position: absolute;
+          top: 0; left: 0; right: 0; bottom: 0;
+          background: radial-gradient(ellipse at 50% 45%, rgba(89, 255, 142, 0.14) 0%, transparent 70%),
+                  radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.30) 100%);
+          pointer-events: none;
+          z-index: 101;
         }
         @keyframes cursorBlink {
           0%, 49% { opacity: 1; }
