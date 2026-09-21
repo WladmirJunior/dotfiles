@@ -11,6 +11,7 @@ with the Ghostty retro profiles in `.dotfiles-private/config/ghostty/`.
 | `phosphor-crt.js` | `retro` profile | Alias matching default retro CRT. |
 | `phosphor-archive.js` | (standalone) | Monochrome vintage green. Every ANSI slot flattened to a green tone. |
 | `tokyonight.js` | TokyoNight | TokyoNight Night modern palette. |
+| `ambar.js` | Ghost CRT Live Studio | Amber phosphor, calibrated bloom/scanlines matched to real Blink hterm (`x-screen`). |
 
 ## Installing a theme
 
@@ -31,6 +32,8 @@ Additional themes:
   `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/tokyonight.js`
 - Phosphor Archive:
   `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/phosphor-archive.js`
+- Ambar:
+  `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/ambar.js`
 
 The URL tracks `main`, so a re-import picks up any later edit. Pin a commit SHA
 in place of `main` to freeze it.
@@ -75,6 +78,17 @@ cp ~/Library/Fonts/TerminessNerdFontMono-Regular.ttf .
 woff2_compress TerminessNerdFontMono-Regular.ttf
 # repeat for Bold, Italic, BoldItalic, then move the .woff2 into themes/blink/fonts/
 ```
+
+### Terminus (bitmap-style alternative)
+
+`terminus.css` is a second, separate font stylesheet for the plain Terminus
+TTF (not the Nerd Font patched variant above), served directly as `.ttf`
+(no woff2 step, faces are already small).
+
+| Field | Value |
+|---|---|
+| Font-Family Name | `Terminus` |
+| CSS FONT-FAMILY STYLESHEET | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminus.css` |
 
 ## Why the variations are separate
 
