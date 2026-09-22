@@ -49,8 +49,8 @@ const crtCss = `
           position: absolute;
           top: 0; left: 0; right: 0; bottom: 0;
           background: linear-gradient(
-            rgba(0, 0, 0, 0) 50%,
-            rgba(0, 0, 0, 0.38) 50%
+            rgba(0, 0, 0, 0) 67%,
+            rgba(0, 0, 0, 0.16) 67%
           );
           background-size: 100% 3px;
           pointer-events: none;
@@ -62,8 +62,8 @@ const crtCss = `
           position: absolute;
           top: 0; left: 0; right: 0; bottom: 0;
           background: linear-gradient(
-            rgba(0, 0, 0, 0) 50%,
-            rgba(0, 0, 0, 0.38) 50%
+            rgba(0, 0, 0, 0) 67%,
+            rgba(0, 0, 0, 0.16) 67%
           );
           background-size: 100% 3px;
           pointer-events: none;
