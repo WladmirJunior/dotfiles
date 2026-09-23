@@ -29,8 +29,13 @@ vim.g.maplocalleader = ' '
 -- UI via :Lazy. Clones itself on first run.
 local lazypath = vim.fn.stdpath('data') .. '/lazy/lazy.nvim'
 if not (vim.uv or vim.loop).fs_stat(lazypath) then
-  vim.fn.system({ 'git', 'clone', '--filter=blob:none', '--branch=stable',
+  local ok, out = pcall(vim.fn.system, { 'git', 'clone', '--filter=blob:none', '--branch=stable',
     'https://github.com/folke/lazy.nvim.git', lazypath })
+  if not ok or vim.v.shell_error ~= 0 then
+    -- Start without plugins instead of failing on require('lazy').
+    vim.api.nvim_echo({ { 'lazy.nvim clone failed, plugins disabled:\n' .. tostring(out), 'ErrorMsg' } }, true, {})
+    return
+  end
 end
 vim.opt.rtp:prepend(lazypath)
 

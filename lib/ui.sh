@@ -32,7 +32,6 @@
 . "$(dirname "${BASH_SOURCE[0]:-$0}")/exec.sh"
 
 LAYOUT_MARGIN=2         # left margin so nothing hugs the terminal edge
-LAYOUT_MAXWIDTH=90      # cap the UI width on very wide terminals
 
 # =============================================================================
 #  GUM SOURCE  — single source of truth for which gum we run.
@@ -161,10 +160,19 @@ have_gum() {
 }
 gum_has_width() { "$GUM" table --help 2>&1 | grep -q -- '--width'; }   # fork only
 
-# Inner content width = (capped) terminal width minus the left+right margins.
-cwidth() { local w; w=$(tput cols 2>/dev/null || echo 80)
-           [ "$w" -gt "$LAYOUT_MAXWIDTH" ] && w=$LAYOUT_MAXWIDTH
-           echo $(( w - LAYOUT_MARGIN * 2 )); }
+# term_cols: width of the controlling terminal. Read from /dev/tty because
+# `tput cols` inside $(...) sees a pipe on stdout and, under `curl | bash`,
+# falls back to 80. DOTFILES_TERM_COLS overrides it (tests).
+term_cols() {
+  local sz c
+  sz="$(stty size 2>/dev/null </dev/tty || true)"
+  c="${DOTFILES_TERM_COLS:-${sz#* }}"
+  case "$c" in ''|0|*[!0-9]*) c=$(tput cols 2>/dev/null || echo 80) ;; esac
+  echo "$c"
+}
+
+# Inner content width = terminal width minus the left+right margins.
+cwidth() { echo $(( $(term_cols) - LAYOUT_MARGIN * 2 )); }
 
 # -----------------------------------------------------------------------------
 #  UI HELPERS  — three visual levels, all left-margined by LAYOUT_MARGIN:

@@ -102,6 +102,12 @@ grep -q 'yazi plugin install failed; continuing' "$TMP/step-d.err"
 grep -qF "$ROOT/config/zsh/zshenv" "$TMP/home-a/.zshenv"
 grep -qF '.zshenv.local' "$TMP/home-a/.zshenv"
 grep -q "created:$TMP/home-a/.zshenv" "$TMP/tx-a.jsonl"
+# ~/.zprofile: same thin file; it restores ~/.local/bin ahead of /usr/bin after
+# macOS path_helper, so login shells never hit the CLT git/python3 stubs.
+[ -f "$TMP/home-a/.zprofile" ] && [ ! -L "$TMP/home-a/.zprofile" ]
+grep -qF "$ROOT/config/zsh/zprofile" "$TMP/home-a/.zprofile"
+grep -q "created:$TMP/home-a/.zprofile" "$TMP/tx-a.jsonl"
+[ "$(HOME="$TMP/home-a" PATH=/usr/bin:/bin zsh -c 'mkdir -p ~/.local/bin; source ~/.zprofile; print -r -- ${path[1]}')" = "$TMP/home-a/.local/bin" ]
 
 # 4b) A pre-existing ~/.zshenv is backed up through the transaction (restored on
 # rollback), never blind-overwritten.

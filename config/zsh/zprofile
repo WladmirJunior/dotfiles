@@ -1,0 +1,12 @@
+# Managed by dotfiles. Sourced by login shells, after /etc/zprofile.
+#
+# macOS /etc/zprofile runs path_helper, which rebuilds PATH with the system
+# dirs first: ~/.local/bin (put first by the zshenv) lands behind /usr/bin.
+# On a Mac without the Command Line Tools, /usr/bin/git and /usr/bin/python3
+# are stubs that pop the CLT install dialog, so any login shell (Kitty reads
+# its environment from one) would pick them over the standalone binaries.
+
+for __dir in /opt/homebrew/sbin /opt/homebrew/bin "$HOME/.local/bin"; do
+  [ -d "$__dir" ] && path=("$__dir" ${path:#$__dir})
+done
+unset __dir

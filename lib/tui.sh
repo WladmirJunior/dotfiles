@@ -62,32 +62,62 @@ tui_launch() {
     esac
   }
 
+  # Box drawing and padding count display characters, not bytes: bash's
+  # printf pads "%-*s" by bytes, which shortens every row holding ▸, •, ℹ or ─
+  # and breaks the right border. ${#var} counts characters under a UTF-8 locale.
+  case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+    *UTF-8*|*utf-8*|*UTF8*|*utf8*) ;;
+    *) if [ "$is_darwin" -eq 1 ]; then local LC_ALL=en_US.UTF-8; else local LC_ALL=C.UTF-8; fi ;;
+  esac
+
+  # tui_size: set cols/lines from the controlling terminal. `tput` inside $(...)
+  # sees a pipe on stdout and, under `curl | bash`, falls back to 80x24.
+  tui_size() {
+    local sz
+    sz="$(stty size 2>/dev/null </dev/tty || true)"
+    lines="${DOTFILES_TERM_LINES:-${sz% *}}"
+    cols="${DOTFILES_TERM_COLS:-${sz#* }}"
+    case "$lines" in ''|0|*[!0-9]*) lines=$(tput lines 2>/dev/null || echo 24) ;; esac
+    case "$cols" in ''|0|*[!0-9]*) cols=$(tput cols 2>/dev/null || echo 80) ;; esac
+  }
+
+  # tui_rep CHAR N: CHAR repeated N times (locale-independent, unlike tr).
+  tui_rep() {
+    local r=""
+    [ "$2" -gt 0 ] && { r="$(printf '%*s' "$2" '')"; r="${r// /$1}"; }
+    printf '%s' "$r"
+  }
+
+  # tui_fit TEXT WIDTH: TEXT truncated with … or right-padded to exactly WIDTH.
+  tui_fit() {
+    local t="$1" w="$2"
+    if [ "${#t}" -gt "$w" ]; then
+      t="${t:0:$((w - 1))}…"
+    fi
+    printf '%s%s' "$t" "$(tui_rep ' ' $((w - ${#t})))"
+  }
+
+  # tui_center TEXT WIDTH
+  tui_center() {
+    local t="$1" w="$2" left
+    [ "${#t}" -gt "$w" ] && t="${t:0:$((w - 1))}…"
+    left=$(( (w - ${#t}) / 2 ))
+    tui_fit "$(tui_rep ' ' "$left")$t" "$w"
+  }
+
   tui_draw() {
     local cols lines
-    cols=$(tput cols 2>/dev/null || echo 80)
-    lines=$(tput lines 2>/dev/null || echo 24)
+    tui_size
     [ "$cols" -lt 50 ] && cols=50
     [ "$lines" -lt 18 ] && lines=18
 
-    # Proportional width: expand across terminal width with a 2-char margin
-    local inner_width=$((cols - 4))
-    [ "$inner_width" -lt 46 ] && inner_width=46
-
-    local border
-    border=$(printf '%*s' "$inner_width" '' | tr ' ' '─')
-
-    # Move cursor to top-left and clear
-    printf '\033[H\033[2J' >/dev/tty
-
-    local rendered_lines=0
+    # W: width inside the box borders. Rows are 2 + 1 + W + 1 = cols - 2 wide,
+    # leaving a 2-column margin on both sides.
+    local W=$((cols - 6))
+    local hr; hr="$(tui_rep '─' "$W")"
+    local frame="" nl=$'\n' rendered_lines=0
 
     # 1. Header Box
-    printf "${c_cyan}  ┌%s┐${c_reset}\n" "$border" >/dev/tty; ((rendered_lines++))
-    printf "${c_cyan}  │${c_bold}%*s%-*s${c_reset}${c_cyan}│${c_reset}\n" \
-      $(( (inner_width - 25) / 2 )) "" $(( inner_width - (inner_width - 25) / 2 )) "DOTFILES ARCHINSTALL MENU" >/dev/tty; ((rendered_lines++))
-    printf "${c_cyan}  │${c_dim}%*s%-*s${c_reset}${c_cyan}│${c_reset}\n" \
-      $(( (inner_width - 36) / 2 )) "" $(( inner_width - (inner_width - 36) / 2 )) "Full-Screen Configuration Interface" >/dev/tty; ((rendered_lines++))
-
     local sys_desc="OS: $tui_os ($tui_arch)"
     if [ "$is_darwin" -eq 1 ]; then
       local mac_ver
@@ -95,13 +125,13 @@ tui_launch() {
       [ -n "$mac_ver" ] && sys_desc="$sys_desc • macOS $mac_ver"
     fi
     sys_desc="$sys_desc • Standalone / Minimal Engine"
-    local sys_len=${#sys_desc}
-    [ "$sys_len" -ge "$inner_width" ] && sys_desc="${sys_desc:0:$((inner_width - 4))}..."
-    printf "${c_cyan}  │${c_dim}%*s%-*s${c_reset}${c_cyan}│${c_reset}\n" \
-      $(( (inner_width - ${#sys_desc}) / 2 )) "" $(( inner_width - (inner_width - ${#sys_desc}) / 2 )) "$sys_desc" >/dev/tty; ((rendered_lines++))
-    printf "${c_cyan}  └%s┘${c_reset}\n" "$border" >/dev/tty; ((rendered_lines++))
 
-    printf "\n" >/dev/tty; ((rendered_lines++))
+    frame+="  ${c_cyan}┌${hr}┐${c_reset}${nl}"
+    frame+="  ${c_cyan}│${c_bold}$(tui_center "DOTFILES ARCHINSTALL MENU" "$W")${c_reset}${c_cyan}│${c_reset}${nl}"
+    frame+="  ${c_cyan}│${c_reset}${c_dim}$(tui_center "Full-Screen Configuration Interface" "$W")${c_reset}${c_cyan}│${c_reset}${nl}"
+    frame+="  ${c_cyan}│${c_reset}${c_dim}$(tui_center "$sys_desc" "$W")${c_reset}${c_cyan}│${c_reset}${nl}"
+    frame+="  ${c_cyan}└${hr}┘${c_reset}${nl}${nl}"
+    rendered_lines=6
 
     # 2. Build Menu Item List
     local -a item_keys=() item_labels=() item_vals=() item_descs=()
@@ -172,68 +202,53 @@ tui_launch() {
     [ "$tui_cursor" -ge "$count" ] && tui_cursor=$((count - 1))
     [ "$tui_cursor" -lt 0 ] && tui_cursor=0
 
-    # 3. Render Menu Items with dynamic dot-leaders spanning the full width
-    local content_width=$((inner_width - 4))
-    local i
+    # 3. Menu rows span the box's outer width (W + 2), dot leaders fill the gap.
+    local RW=$((W + 2)) i row marker dots_len
     for ((i=0; i<count; i++)); do
       if [ "${item_keys[i]}" = "install" ]; then
-        printf "  ${c_cyan}  %s${c_reset}\n" "$(printf '%*s' "$content_width" '' | tr ' ' '─')" >/dev/tty; ((rendered_lines++))
+        frame+="   ${c_cyan}${hr}${c_reset}${nl}"; rendered_lines=$((rendered_lines + 1))
       fi
-
-      local lbl="${item_labels[i]}"
-      local val="${item_vals[i]}"
-
-      if [ -n "$val" ]; then
-        local label_len=${#lbl}
-        local val_len=${#val}
-        local dots_len=$(( content_width - label_len - val_len - 6 ))
-        [ "$dots_len" -lt 2 ] && dots_len=2
-        local dots=$(printf '%*s' "$dots_len" '' | tr ' ' '.')
-
-        if [ "$i" -eq "$tui_cursor" ]; then
-          local line_str=$(printf "▸ %s %s %s" "$lbl" "$dots" "$val")
-          printf "    ${c_cyan}${c_bold}${c_rev} %-*s ${c_reset}\n" "$((content_width - 2))" "$line_str" >/dev/tty; ((rendered_lines++))
-        else
-          printf "      %s ${c_dim}%s${c_reset} %s\n" "$lbl" "$dots" "$val" >/dev/tty; ((rendered_lines++))
-        fi
+      marker="   "
+      [ "$i" -eq "$tui_cursor" ] && marker=" ▸ "
+      if [ -n "${item_vals[i]}" ]; then
+        # The value always stays visible; a narrow terminal shortens the label.
+        local lbl_w=$(( RW - 3 - ${#item_vals[i]} - 5 ))
+        local lbl="${item_labels[i]}"
+        [ "${#lbl}" -gt "$lbl_w" ] && lbl="$(tui_fit "$lbl" "$lbl_w")"
+        dots_len=$(( RW - 3 - ${#lbl} - ${#item_vals[i]} - 3 ))
+        row="$(tui_fit "${marker}${lbl} $(tui_rep '.' "$dots_len") ${item_vals[i]}" "$RW")"
       else
-        # Action buttons
-        if [ "$i" -eq "$tui_cursor" ]; then
-          printf "    ${c_cyan}${c_bold}${c_rev} ▸ %-*s ${c_reset}\n" "$((content_width - 4))" "$lbl" >/dev/tty; ((rendered_lines++))
-        else
-          printf "        %s\n" "$lbl" >/dev/tty; ((rendered_lines++))
-        fi
+        row="$(tui_fit "${marker}${item_labels[i]}" "$RW")"
       fi
+      if [ "$i" -eq "$tui_cursor" ]; then
+        frame+="  ${c_cyan}${c_bold}${c_rev}${row}${c_reset}${nl}"
+      else
+        frame+="  ${row}${nl}"
+      fi
+      rendered_lines=$((rendered_lines + 1))
     done
 
-    # 4. Dynamic Vertical Padding down to the footer/help area
-    # Help box (3 lines) + Footer separator & text (2 lines) = 5 lines at bottom
-    local bottom_lines=6
-    local pad_lines=$(( lines - rendered_lines - bottom_lines ))
-    [ "$pad_lines" -lt 1 ] && pad_lines=1
-    for ((p=0; p<pad_lines; p++)); do
-      printf "\n" >/dev/tty; ((rendered_lines++))
-    done
+    # 4. Pad down so help box + footer (5 rows) end on the terminal's last row.
+    local pad_lines=$(( lines - rendered_lines - 5 ))
+    [ "$pad_lines" -lt 0 ] && pad_lines=0
+    local p; for ((p=0; p<pad_lines; p++)); do frame+="$nl"; done
 
-    # 5. Contextual Help Box (Fixed position above footer)
-    local active_desc="${item_descs[tui_cursor]}"
-    local help_border_fill=$(( inner_width - 10 ))
-    [ "$help_border_fill" -lt 2 ] && help_border_fill=2
-    local help_border=$(printf '%*s' "$help_border_fill" '' | tr ' ' '─')
+    # 5. Contextual Help Box
+    frame+="  ${c_cyan}┌─ Help $(tui_rep '─' $((W - 7)))┐${c_reset}${nl}"
+    frame+="  ${c_cyan}│${c_reset}${c_dim}$(tui_fit " ℹ ${item_descs[tui_cursor]}" "$W")${c_reset}${c_cyan}│${c_reset}${nl}"
+    frame+="  ${c_cyan}└${hr}┘${c_reset}${nl}"
 
-    printf "  ${c_cyan}┌─ Help ─%s┐${c_reset}\n" "$help_border" >/dev/tty; ((rendered_lines++))
-    printf "  ${c_cyan}│${c_reset}  ${c_dim}ℹ %-*s${c_reset}${c_cyan}│${c_reset}\n" "$((inner_width - 5))" "$active_desc" >/dev/tty; ((rendered_lines++))
-    printf "  ${c_cyan}└%s┘${c_reset}\n" "$border" >/dev/tty; ((rendered_lines++))
-
-    # 6. Footer Bar
+    # 6. Footer Bar (no newline after the last row, so the screen never scrolls)
     local footer_text
-    if [ "$inner_width" -ge 86 ]; then
+    if [ "$W" -ge 86 ]; then
       footer_text="[↑/↓/j/k] Navigate  •  [Space/Enter] Toggle  •  [1-${dry_num}] Jump  •  [i] Install  •  [q] Quit"
     else
       footer_text="[↑/↓] Move • [Space] Toggle • [1-${dry_num}] Jump • [i] Install • [q] Quit"
     fi
-    printf "  ${c_cyan}  %s${c_reset}\n" "$border" >/dev/tty; ((rendered_lines++))
-    printf "    ${c_dim}%s${c_reset}\n" "$footer_text" >/dev/tty; ((rendered_lines++))
+    frame+="   ${c_cyan}${hr}${c_reset}${nl}"
+    frame+="  ${c_dim}$(tui_fit " $footer_text" "$RW")${c_reset}"
+
+    printf '\033[H\033[2J%s' "$frame" >/dev/tty
   }
 
   # Redraw automatically on terminal resize (SIGWINCH)

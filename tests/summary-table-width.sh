@@ -10,17 +10,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-mkdir -p "$WORK/bin"
-
-# Stub tput so cwidth() sees the terminal size the case asks for.
-make_tput() {
-  cat > "$WORK/bin/tput" <<EOF
-#!/bin/sh
-[ "\$1" = cols ] && echo $1 && exit 0
-exec /usr/bin/tput "\$@"
-EOF
-  chmod +x "$WORK/bin/tput"
-}
 
 long="$(printf 'a%.0s' $(seq 1 400))"
 cat > "$WORK/report.txt" <<EOF
@@ -33,8 +22,7 @@ EOF
 
 fails=0
 for cols in 40 60 80 90 120 200; do
-  make_tput "$cols"
-  out="$(PATH="$WORK/bin:$PATH" bash -c "
+  out="$(DOTFILES_TERM_COLS="$cols" bash -c "
     cd '$ROOT'
     . lib/ui.sh
     . lib/setup/report.sh
