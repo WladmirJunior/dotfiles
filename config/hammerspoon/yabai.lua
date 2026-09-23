@@ -7,7 +7,6 @@
 -- Workspaces are the native macOS desktops. yabai cannot create desktops
 -- without its scripting addition (SIP stays on), so a missing one is added
 -- through Mission Control (hs.spaces) the first time its number is used.
--- Empty desktops are pruned whenever Mission Control is opened from here.
 
 local M = {}
 
@@ -15,7 +14,7 @@ local M = {}
 -- and a print from a callback that outlived an `hs` CLI call raises "ipc port
 -- is no longer valid", which pops the console open.
 local _ = { hs.alert, hs.application, hs.axuielement, hs.canvas, hs.chooser, hs.eventtap, hs.fs, hs.geometry,
-  hs.json, hs.screen, hs.spaces, hs.task, hs.timer, hs.window }
+  hs.json, hs.screen, hs.spaces, hs.task, hs.timer, hs.urlevent, hs.window }
 
 local function find_yabai()
   for _, p in ipairs({ os.getenv('HOME') .. '/.local/bin/yabai', '/opt/homebrew/bin/yabai', '/usr/local/bin/yabai' }) do
@@ -40,22 +39,28 @@ local function query(args)
 end
 
 -- ── Workspaces ────────────────────────────────────────────────────────────────
+-- Desktops behave like niri workspaces:
+--  * Option+N past the last desktop creates one new, empty desktop at the end,
+--    unless the last desktop is already empty (then nothing happens);
+--  * Option+Shift+N past the last desktop sends the window to that trailing
+--    empty desktop, creating it when there is none;
+--  * an empty desktop in the middle is removed (see compact_spaces below).
+-- Each key press costs one yabai query; creating a desktop goes through
+-- Mission Control (the only way without yabai's scripting addition).
 local digit_keys = { '1', '2', '3', '4', '5', '6', '7', '8', '9' }
 local last_space
 
-local function remember_space()
-  local cur = query('--spaces --space')
-  if cur then last_space = cur.index end
+local function display_spaces()
+  local spaces = query('--spaces --display') or {}
+  local cur
+  for _, sp in ipairs(spaces) do
+    if sp['has-focus'] then cur = sp end
+  end
+  return spaces, cur
 end
 
--- Using a number past the last desktop appends one new desktop.
-
--- space_index(n): yabai index of desktop N on the focused display; past the
--- last one, a new desktop is appended. nil if creation failed.
-local function space_index(n)
-  local spaces = query('--spaces --display') or {}
-  if spaces[n] then return spaces[n].index end
-  local count = #spaces
+-- add_space(): append a desktop; returns its yabai index, or nil.
+local function add_space(count)
   local ok, err = hs.spaces.addSpaceToScreen(hs.screen.mainScreen(), true)
   if not ok then
     hs.alert.show('Could not create a desktop: ' .. tostring(err))
@@ -63,23 +68,21 @@ local function space_index(n)
   end
   -- Mission Control needs a moment to settle before yabai sees the new one.
   for _ = 1, 20 do
-    spaces = query('--spaces --display') or {}
+    local spaces = query('--spaces --display') or {}
     if #spaces > count then return spaces[#spaces].index end
     hs.timer.usleep(50000)
   end
   return nil
 end
 
-local function focus_index(idx)
-  remember_space()
+local function focus_index(idx, from)
+  if from then last_space = from end
   run('"$Y" -m space --focus ' .. idx, function(code)
     if code ~= 0 and idx >= 1 and idx <= 9 then
       hs.eventtap.keyStroke({ 'ctrl' }, digit_keys[idx], 0)
     end
   end)
 end
-
-local prune_empty_spaces -- defined below; goto_space calls it
 
 -- Mission Control is open when the Dock exposes its "mc" group.
 local function mc_is_open()
@@ -91,55 +94,110 @@ local function mc_is_open()
   return false
 end
 
--- Option+N: go to desktop N. Pressed on the desktop already on screen it opens
--- Mission Control; any Option+N while Mission Control is open closes it (and
--- then goes to N when N is another desktop).
+-- Option+N. Pressed on the desktop already on screen it opens Mission
+-- Control; any Option+N while Mission Control is open closes it (and then goes
+-- to N when N is another desktop).
 local function goto_space(n)
-  local cur = query('--spaces --space')
+  local spaces, cur = display_spaces()
+  local cur_index = cur and cur.index
   if mc_is_open() then
     hs.spaces.closeMissionControl()
-    local spaces = query('--spaces --display') or {}
-    if cur and spaces[n] and spaces[n].index ~= cur.index then
-      hs.timer.doAfter(0.35, function() focus_index(spaces[n].index) end)
+    if spaces[n] and spaces[n].index ~= cur_index then
+      hs.timer.doAfter(0.35, function() focus_index(spaces[n].index, cur_index) end)
     end
     return
   end
-  local idx = space_index(n)
-  if not idx then return end
-  if cur and idx == cur.index then
+  local target = spaces[n]
+  if not target then
+    local last = spaces[#spaces]
+    if last and #last.windows == 0 then return end
+    local idx = add_space(#spaces)
+    if idx then focus_index(idx, cur_index) end
+    return
+  end
+  if target.index == cur_index then
     hs.spaces.toggleMissionControl()
-    hs.timer.doAfter(0.6, prune_empty_spaces)
   else
-    focus_index(idx)
+    focus_index(target.index, cur_index)
   end
 end
 
+-- Option+Shift+N.
 local function move_to_space(n)
-  local idx = space_index(n)
+  local spaces = display_spaces()
+  local target = spaces[n]
+  local idx = target and target.index
+  if not idx then
+    local last = spaces[#spaces]
+    idx = (last and #last.windows == 0) and last.index or add_space(#spaces)
+  end
   if idx then run('"$Y" -m window --space ' .. idx) end
 end
 
 local function back_and_forth()
-  if last_space then focus_index(last_space) end
-end
-
--- prune_empty_spaces: remove empty desktops that are not on screen. macOS
--- only removes a desktop through Mission Control (without yabai's scripting
--- addition), so this runs only while Mission Control is already open and the
--- removal causes no extra animation. Empty desktops otherwise just stay.
-prune_empty_spaces = function()
-  local spaces = query('--spaces --display') or {}
-  local left = #spaces
-  for _, sp in ipairs(spaces) do
-    if left > 1 and #sp.windows == 0 and not sp['is-visible'] and not sp['is-native-fullscreen'] then
-      if hs.spaces.removeSpace(sp.id, false) then left = left - 1 end
-    end
+  if last_space then
+    local _, cur = display_spaces()
+    focus_index(last_space, cur and cur.index)
   end
 end
 
--- Drop signals registered by earlier versions of this file.
+
+-- Empty desktops in the middle (a desktop with windows comes after them)
+-- are removed so the numbers stay contiguous; trailing empty ones stay. The
+-- removal waits for the desktop-switch slide to finish (Mission Control
+-- opened mid-slide collapsed halfway) and, with Screen Recording permission,
+-- a still image of the screen covers Mission Control while it opens and closes.
+local SWITCH_SETTLE = 0.6
+local compact_timer
+
+local function compact_spaces()
+  local spaces = query('--spaces --display') or {}
+  local last_used = 0
+  for i, sp in ipairs(spaces) do
+    if #sp.windows > 0 or sp['is-visible'] then last_used = i end
+  end
+  local doomed = {}
+  for i, sp in ipairs(spaces) do
+    if i < last_used and #sp.windows == 0 and not sp['is-visible'] and not sp['is-native-fullscreen'] then
+      table.insert(doomed, sp.id)
+    end
+  end
+  if #doomed == 0 or mc_is_open() then return end
+
+  local cover
+  if hs.screenRecordingState() then
+    local screen = hs.screen.mainScreen()
+    local img = screen:snapshot()
+    if img then
+      cover = hs.canvas.new(screen:fullFrame())
+      cover:level(hs.canvas.windowLevels.screenSaver)
+      cover[1] = { type = 'image', image = img, imageScaling = 'scaleToFit' }
+      cover:show()
+    end
+  end
+  for _, id in ipairs(doomed) do hs.spaces.removeSpace(id, false) end
+  hs.spaces.closeMissionControl()
+  if cover then hs.timer.doAfter(0.5, function() cover:delete() end) end
+end
+
+local function schedule_compact()
+  if compact_timer then compact_timer:stop() end
+  compact_timer = hs.timer.doAfter(SWITCH_SETTLE, function()
+    compact_timer = nil
+    compact_spaces()
+  end)
+end
+
+-- yabai reports events through a hammerspoon:// URL (not the `hs` CLI, whose
+-- print redirection breaks callbacks that run afterwards).
+hs.urlevent.bind('yabai-compact', function() schedule_compact() end)
 for _, label in ipairs({ 'hs_cleanup_window', 'hs_cleanup_app', 'hs_cleanup_space' }) do
   run('"$Y" -m signal --remove ' .. label .. ' 2>/dev/null')
+end
+for label, event in pairs({ hs_compact_space = 'space_changed', hs_compact_window = 'window_destroyed',
+                            hs_compact_app = 'application_terminated' }) do
+  run(string.format([["$Y" -m signal --add label=%s event=%s action="open -g 'hammerspoon://yabai-compact'"]],
+    label, event))
 end
 
 -- ── Windows ───────────────────────────────────────────────────────────────────
