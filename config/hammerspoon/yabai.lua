@@ -79,6 +79,8 @@ local function focus_index(idx)
   end)
 end
 
+local prune_empty_spaces -- defined below; goto_space calls it
+
 -- Mission Control is open when the Dock exposes its "mc" group.
 local function mc_is_open()
   local dock = hs.application.get('com.apple.dock')
@@ -125,7 +127,7 @@ end
 -- only removes a desktop through Mission Control (without yabai's scripting
 -- addition), so this runs only while Mission Control is already open and the
 -- removal causes no extra animation. Empty desktops otherwise just stay.
-local function prune_empty_spaces()
+prune_empty_spaces = function()
   local spaces = query('--spaces --display') or {}
   local left = #spaces
   for _, sp in ipairs(spaces) do
