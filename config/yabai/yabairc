@@ -28,11 +28,16 @@ yabai -m rule --add app="^System Settings$" manage=off
 yabai -m rule --add app="^System Preferences$" manage=off
 yabai -m rule --add app="^Archive Utility$" manage=off
 yabai -m rule --add app="^1Password$" manage=off
+yabai -m rule --add app="^Hammerspoon$" manage=off
 yabai -m rule --add app="^Finder$" title="(Copy|Move|Trash|General|Info)" manage=off
 yabai -m rule --add app="^Calculator$" manage=off
 yabai -m rule --add app="^Activity Monitor$" manage=off
 yabai -m rule --add app="^Software Update$" manage=off
-yabai -m rule --add sub-role="^AXSystemDialog$" manage=off
-yabai -m rule --add sub-role="^AXDialog$" manage=off
+# yabai 7 rejects role-only rules: they need an app or title matcher.
+yabai -m rule --add app=".*" subrole="^AXSystemDialog$" manage=off
+yabai -m rule --add app=".*" subrole="^AXDialog$" manage=off
+
+# Rules only affect new windows unless applied to the ones already open.
+yabai -m rule --apply
 
 echo "yabai configuration loaded."
