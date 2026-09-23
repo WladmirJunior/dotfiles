@@ -1,8 +1,8 @@
 -- Keyboard layer for yabai, mirroring the OmniWM bindings of the main Mac.
 -- Hammerspoon owns the hotkeys (no skhd); every action is a `yabai -m` call.
--- Nothing here may shadow text editing: Option/Option+Shift with arrows, - = .
--- , and ` stay with the focused app (word jumps, dashes, Alt+. in the shell,
--- the grave-accent dead key).
+-- Nothing here may shadow text editing: Option/Option+Shift with arrows, . ,
+-- and ` stay with the focused app (word jumps, Alt+. in the shell, the
+-- grave-accent dead key).
 --
 -- Workspaces are the native macOS desktops. yabai cannot create desktops
 -- without its scripting addition (SIP stays on), so a missing one is added
@@ -189,38 +189,65 @@ end
 -- yabai leaves it floating (yabairc rule); a hidden window is moved to the
 -- current desktop before it is shown, so showing never jumps desktops.
 --
--- The slide only moves the window (its size is set once, off screen): a move
--- per frame is cheap, while hs.window's animated setFrame also resizes on
--- every step and stutters on heavy apps.
+-- Moving a real window every frame stutters (each step is an Accessibility
+-- call the app must answer). The slide animates a snapshot in an hs.canvas
+-- instead, and the real window only appears or hides at the end. Snapshots
+-- need Screen Recording permission; without it the panel shows and hides
+-- instantly.
 local function panel_frame(screen, margin)
   local f = screen:frame()
   return hs.geometry.rect(f.x + margin, f.y + margin, f.w - 2 * margin, f.h - 2 * margin)
 end
 
-local slide_timer
-local function slide(win, from_y, to_y, duration, done)
+local panel_snapshots = {}
+local slide_timer, slide_canvas
+
+local function stop_slide()
   if slide_timer then slide_timer:stop() end
-  local x = win:frame().x
+  if slide_canvas then slide_canvas:delete() end
+  slide_timer, slide_canvas = nil, nil
+end
+
+-- slide_image(img, frame, from_y, to_y, duration, done)
+local function slide_image(img, frame, from_y, to_y, duration, done)
+  stop_slide()
+  local c = hs.canvas.new({ x = frame.x, y = from_y, w = frame.w, h = frame.h })
+  c:level(hs.canvas.windowLevels.floating)
+  c[1] = { type = 'image', image = img, imageScaling = 'scaleToFit' }
+  c:show()
+  slide_canvas = c
   local start = hs.timer.secondsSinceEpoch()
   slide_timer = hs.timer.doEvery(1 / 60, function()
     local t = math.min((hs.timer.secondsSinceEpoch() - start) / duration, 1)
     local e = 1 - (1 - t) ^ 3
-    win:setTopLeft({ x = x, y = from_y + (to_y - from_y) * e })
+    c:topLeft({ x = frame.x, y = from_y + (to_y - from_y) * e })
     if t >= 1 then
       slide_timer:stop()
       slide_timer = nil
       if done then done() end
+      -- Keep the image a beat so the real window is drawn before it goes.
+      hs.timer.doAfter(0.05, function()
+        c:delete()
+        if slide_canvas == c then slide_canvas = nil end
+      end)
     end
   end)
+end
+
+local function can_snapshot()
+  return hs.screenRecordingState and hs.screenRecordingState()
 end
 
 local function toggle_panel(bundle_id, margin, duration)
   local app = hs.application.get(bundle_id)
   if app and not app:isHidden() and app:isFrontmost() then
     local win = app:mainWindow()
-    if win then
+    local img = win and can_snapshot() and win:snapshot()
+    if img then
       local f = win:frame()
-      slide(win, f.y, win:screen():fullFrame().h, duration, function() app:hide() end)
+      panel_snapshots[bundle_id] = img
+      app:hide()
+      slide_image(img, f, f.y, win:screen():fullFrame().h, duration)
     else
       app:hide()
     end
@@ -234,11 +261,17 @@ local function toggle_panel(bundle_id, margin, duration)
     if cur then hs.execute(string.format("'%s' -m window %d --space %d", YABAI, win:id(), cur.index)) end
     local screen = hs.screen.mainScreen()
     local target = panel_frame(screen, margin)
-    local below = screen:fullFrame().h
-    win:setFrame(hs.geometry.rect(target.x, below, target.w, target.h), 0)
-    running:unhide()
-    win:focus()
-    slide(win, below, target.y, duration)
+    win:setFrame(target, 0)
+    local img = can_snapshot() and panel_snapshots[bundle_id]
+    local function reveal()
+      running:unhide()
+      win:focus()
+    end
+    if img then
+      slide_image(img, target, screen:fullFrame().h, target.y, duration, reveal)
+    else
+      reveal()
+    end
     return true
   end
 
@@ -336,10 +369,10 @@ local bindings = {
   { ctrl_opt, ',', 'Cycle size backward', function() cycle_size(-1) end },
   { ctrl_opt, 'f', 'Expand to available width', y('"$Y" -m window --ratio abs:0.8') },
   { ctrl_opt, 'r', 'Reload Hammerspoon', function() hs.reload() end },
-  { ctrl_opt, '[', 'Width -10%', y('"$Y" -m window --resize right:-60:0 || "$Y" -m window --resize left:60:0') },
-  { ctrl_opt, ']', 'Width +10%', y('"$Y" -m window --resize right:60:0 || "$Y" -m window --resize left:-60:0') },
-  { ctrl_opt_s, '[', 'Height -10%', y('"$Y" -m window --resize bottom:0:-60 || "$Y" -m window --resize top:0:60') },
-  { ctrl_opt_s, ']', 'Height +10%', y('"$Y" -m window --resize bottom:0:60 || "$Y" -m window --resize top:0:-60') },
+  { opt, '-', 'Width -10%', y('"$Y" -m window --resize right:-60:0 || "$Y" -m window --resize left:60:0') },
+  { opt, '=', 'Width +10%', y('"$Y" -m window --resize right:60:0 || "$Y" -m window --resize left:-60:0') },
+  { opt_s, '-', 'Height -10%', y('"$Y" -m window --resize bottom:0:-60 || "$Y" -m window --resize top:0:60') },
+  { opt_s, '=', 'Height +10%', y('"$Y" -m window --resize bottom:0:60 || "$Y" -m window --resize top:0:-60') },
   { opt_s, 'b', 'Balance sizes', y('"$Y" -m space --balance') },
   { opt_s, 'r', 'Raise floating windows', raise_floating },
   { ctrl_opt, 'm', 'Menu anywhere', menu_anywhere },
