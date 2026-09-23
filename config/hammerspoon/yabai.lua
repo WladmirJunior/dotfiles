@@ -371,6 +371,7 @@ local bindings = {
   { ctrl_opt, 'home', 'Move column to first', y('"$Y" -m window --warp first') },
   { ctrl_opt, 'end', 'Move column to last', y('"$Y" -m window --warp last') },
   { opt, 't', 'New Kitty window', new_terminal_window },
+  { opt, 'return', 'New Kitty window', new_terminal_window },
   { opt, 'home', 'Focus first column', y('"$Y" -m window --focus first') },
   { opt, 'end', 'Focus last column', y('"$Y" -m window --focus last') },
   { ctrl_opt, '.', 'Cycle size forward', function() cycle_size(1) end },
