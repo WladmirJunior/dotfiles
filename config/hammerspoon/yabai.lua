@@ -13,7 +13,7 @@ local M = {}
 -- Load every extension up front. A lazy load prints "-- Loading extension",
 -- and a print from a callback that outlived an `hs` CLI call raises "ipc port
 -- is no longer valid", which pops the console open.
-local _ = { hs.alert, hs.application, hs.canvas, hs.chooser, hs.eventtap, hs.fs, hs.geometry,
+local _ = { hs.alert, hs.application, hs.axuielement, hs.canvas, hs.chooser, hs.eventtap, hs.fs, hs.geometry,
   hs.json, hs.screen, hs.spaces, hs.task, hs.timer, hs.urlevent, hs.window }
 
 local function find_yabai()
@@ -80,9 +80,36 @@ local function focus_index(idx)
   end)
 end
 
+-- Mission Control is open when the Dock exposes its "mc" group.
+local function mc_is_open()
+  local dock = hs.application.get('com.apple.dock')
+  local ax = dock and hs.axuielement.applicationElement(dock)
+  for _, child in ipairs(ax and ax:attributeValue('AXChildren') or {}) do
+    if child:attributeValue('AXIdentifier') == 'mc' then return true end
+  end
+  return false
+end
+
+-- Option+N: go to desktop N. Pressed on the desktop already on screen it opens
+-- Mission Control; any Option+N while Mission Control is open closes it (and
+-- then goes to N when N is another desktop).
 local function goto_space(n)
+  local cur = query('--spaces --space')
+  if mc_is_open() then
+    hs.spaces.closeMissionControl()
+    local spaces = query('--spaces --display') or {}
+    if cur and spaces[n] and spaces[n].index ~= cur.index then
+      hs.timer.doAfter(0.35, function() focus_index(spaces[n].index) end)
+    end
+    return
+  end
   local idx = space_index(n)
-  if idx then focus_index(idx) end
+  if not idx then return end
+  if cur and idx == cur.index then
+    hs.spaces.toggleMissionControl()
+  else
+    focus_index(idx)
+  end
 end
 
 local function move_to_space(n)
@@ -94,26 +121,63 @@ local function back_and_forth()
   if last_space then focus_index(last_space) end
 end
 
+-- Removing a desktop needs Mission Control on screen (the Dock only exposes
+-- the remove action there). Two things keep that from flashing:
+--  * it waits for the desktop-switch slide to finish; opening Mission Control
+--    mid-slide made it pop up and collapse halfway;
+--  * with Screen Recording permission, a still image of the screen covers the
+--    display while Mission Control opens and closes behind it.
+local SWITCH_SETTLE = 0.6
+local cleanup_timer
+
+local function remove_empty_spaces()
+  local spaces = query('--spaces --display') or {}
+  if #spaces <= 1 then return end
+  local doomed = {}
+  for _, sp in ipairs(spaces) do
+    if #sp.windows == 0 and not sp['is-visible'] and not sp['is-native-fullscreen'] then
+      table.insert(doomed, sp.id)
+    end
+  end
+  if #doomed == 0 then return end
+
+  local user_mc = mc_is_open()
+  local cover
+  if not user_mc and hs.screenRecordingState() then
+    local screen = hs.screen.mainScreen()
+    local img = screen:snapshot()
+    if img then
+      cover = hs.canvas.new(screen:fullFrame())
+      cover:level(hs.canvas.windowLevels.screenSaver)
+      cover[1] = { type = 'image', image = img, imageScaling = 'scaleToFit' }
+      cover:show()
+    end
+  end
+  for _, id in ipairs(doomed) do hs.spaces.removeSpace(id, false) end
+  if not user_mc then hs.spaces.closeMissionControl() end
+  if cover then
+    -- Hold the cover until Mission Control has finished closing.
+    hs.timer.doAfter(0.5, function() cover:delete() end)
+  end
+end
+
 -- cleanup_spaces(leave_current): remove every empty desktop that is not on
 -- screen. With leave_current (a window just closed), an empty desktop on
 -- screen is left first; the resulting space_changed signal then removes it.
 local function cleanup_spaces(leave_current)
-  local spaces = query('--spaces --display') or {}
-  if #spaces <= 1 then return end
-  local removed = false
-  for _, sp in ipairs(spaces) do
-    if #sp.windows == 0 and not sp['is-visible'] and not sp['is-native-fullscreen'] then
-      if hs.spaces.removeSpace(sp.id, false) then removed = true end
-    end
-  end
-  if removed then hs.spaces.closeMissionControl() end
   if leave_current then
     local cur = query('--spaces --space')
-    spaces = query('--spaces --display') or {}
+    local spaces = query('--spaces --display') or {}
     if cur and #cur.windows == 0 and #spaces > 1 then
       run('"$Y" -m space --focus ' .. (cur.index > 1 and cur.index - 1 or cur.index + 1))
+      return
     end
   end
+  if cleanup_timer then cleanup_timer:stop() end
+  cleanup_timer = hs.timer.doAfter(SWITCH_SETTLE, function()
+    cleanup_timer = nil
+    remove_empty_spaces()
+  end)
 end
 
 -- yabai reports window/space events through a hammerspoon:// URL (not the
