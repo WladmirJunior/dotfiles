@@ -1,9 +1,9 @@
 -- Keyboard layer for yabai, mirroring the OmniWM bindings of the main Mac.
 -- Hammerspoon owns the hotkeys (no skhd); every action is a `yabai -m` call.
 --
--- Without yabai's scripting addition (SIP stays on) yabai cannot focus spaces,
--- so workspace switching falls back to Mission Control's "Switch to Desktop N"
--- shortcuts (Ctrl+1..9), which the installer enables.
+-- Workspaces are the native macOS desktops. yabai cannot create desktops
+-- without its scripting addition (SIP stays on), so a missing one is added
+-- through Mission Control (hs.spaces) the first time its number is used.
 
 local M = {}
 
@@ -38,13 +38,45 @@ local function remember_space()
   if cur then last_space = cur.index end
 end
 
+-- space_index(n): yabai index of desktop N on the focused display, creating
+-- desktops up to N when they do not exist yet. nil if creation failed.
+local function space_index(n)
+  local spaces = query('--spaces --display') or {}
+  if #spaces < n then
+    local screen = hs.screen.mainScreen()
+    for _ = #spaces + 1, n do
+      local ok, err = hs.spaces.addSpaceToScreen(screen, false)
+      if not ok then
+        hs.spaces.closeMissionControl()
+        hs.alert.show('Could not create desktop ' .. n .. ': ' .. tostring(err))
+        return nil
+      end
+    end
+    hs.spaces.closeMissionControl()
+    -- Mission Control needs a moment to settle before yabai sees the new ones.
+    for _ = 1, 20 do
+      spaces = query('--spaces --display') or {}
+      if #spaces >= n then break end
+      hs.timer.usleep(50000)
+    end
+  end
+  return spaces[n] and spaces[n].index
+end
+
 local function goto_space(n)
+  local idx = space_index(n)
+  if not idx then return end
   remember_space()
-  run('"$Y" -m space --focus ' .. n, function(code)
+  run('"$Y" -m space --focus ' .. idx, function(code)
     if code ~= 0 and n >= 1 and n <= 9 then
       hs.eventtap.keyStroke({ 'ctrl' }, digit_keys[n], 0)
     end
   end)
+end
+
+local function move_to_space(n)
+  local idx = space_index(n)
+  if idx then run('"$Y" -m window --space ' .. idx) end
 end
 
 local function back_and_forth()
@@ -78,14 +110,16 @@ local function cycle_size(dir)
   run(string.format('"$Y" -m window --ratio abs:%.4f', size_steps[i]))
 end
 
-local function toggle_stack()
-  local w = query('--windows --window')
-  if not w then return end
-  if (w['stack-index'] or 0) > 0 then
-    -- Floating and re-tiling a window is how yabai pulls it out of a stack.
-    run('"$Y" -m window --toggle float && "$Y" -m window --toggle float')
+-- Option+T: a new window of the running Kitty (same instance, no extra Dock
+-- icon), or Kitty itself when it is not running.
+local KITTY_ID = 'net.kovidgoyal.kitty'
+local function new_terminal_window()
+  local app = hs.application.get(KITTY_ID)
+  if app then
+    hs.eventtap.keyStroke({ 'cmd' }, 'n', 0, app)
+    app:activate()
   else
-    run('"$Y" -m window --stack recent')
+    hs.application.launchOrFocusByBundleID(KITTY_ID)
   end
 end
 
@@ -168,14 +202,14 @@ local bindings = {
   { ctrl_opt_s, 'right', 'Move column right', y('"$Y" -m window --warp east') },
   { ctrl_opt, 'home', 'Move column to first', y('"$Y" -m window --warp first') },
   { ctrl_opt, 'end', 'Move column to last', y('"$Y" -m window --warp last') },
-  { opt, 't', 'Toggle stacked (tabbed) column', toggle_stack },
+  { opt, 't', 'New Kitty window', new_terminal_window },
   { opt, 'home', 'Focus first column', y('"$Y" -m window --focus first') },
   { opt, 'end', 'Focus last column', y('"$Y" -m window --focus last') },
   { opt, '.', 'Cycle size forward', function() cycle_size(1) end },
   { opt, ',', 'Cycle size backward', function() cycle_size(-1) end },
   { opt_s, 'f', 'Toggle full width', y('"$Y" -m window --toggle zoom-parent') },
   { ctrl_opt, 'f', 'Expand to available width', y('"$Y" -m window --ratio abs:0.8') },
-  { ctrl_opt, 'r', 'Reset window size', y('"$Y" -m window --ratio abs:0.5') },
+  { ctrl_opt, 'r', 'Reload Hammerspoon', function() hs.reload() end },
   { opt, '-', 'Width -10%', y('"$Y" -m window --resize right:-60:0 || "$Y" -m window --resize left:60:0') },
   { opt, '=', 'Width +10%', y('"$Y" -m window --resize right:60:0 || "$Y" -m window --resize left:-60:0') },
   { opt_s, '-', 'Height -10%', y('"$Y" -m window --resize bottom:0:-60 || "$Y" -m window --resize top:0:60') },
@@ -191,7 +225,7 @@ local bindings = {
 for n = 1, 9 do
   table.insert(bindings, { opt, digit_keys[n], 'Switch to workspace ' .. n, function() goto_space(n) end })
   table.insert(bindings, { opt_s, digit_keys[n], 'Move window to workspace ' .. n,
-    y('"$Y" -m window --space ' .. n) })
+    function() move_to_space(n) end })
   table.insert(bindings, { ctrl_opt, digit_keys[n], 'Focus column ' .. n, function() focus_nth(n) end })
 end
 
@@ -208,6 +242,8 @@ local function command_palette()
   chooser:show()
 end
 table.insert(bindings, { ctrl_opt, 'space', 'Command palette', command_palette })
+
+M.goto_space, M.move_to_space, M.new_terminal_window = goto_space, move_to_space, new_terminal_window
 
 M.hotkeys = {}
 for _, b in ipairs(bindings) do

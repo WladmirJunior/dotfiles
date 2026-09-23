@@ -2,6 +2,8 @@
 -- instead; the installer never replaces one it did not write.
 
 hs.autoLaunch(true)
+-- `hs` command-line client (Hammerspoon.app/Contents/Frameworks/hs/hs).
+require('hs.ipc')
 
 local ok, err = pcall(require, 'yabai')
 if not ok then
