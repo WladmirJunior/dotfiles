@@ -449,4 +449,18 @@ out_kitty_12="$(
 )"
 echo "$out_kitty_12" | grep -q "0.48.2"
 
+# 7. Hammerspoon version follows each release's LSMinimumSystemVersion
+for pair in 11.7.11:0.9.100 12.7.6:1.0.0 13.6.0:1.1.1; do
+  out_hs="$(
+    DRY_RUN=1 \
+    HOME="$TMP_GIT" \
+    APPLICATIONS_DIR="$TMP_GIT/Applications" \
+    SW_VERS_BIN="$TMP/bin/sw_vers" \
+    MOCK_MACOS_VERSION="${pair%%:*}" \
+    PATH="$TMP/bin:/usr/bin:/bin" \
+    bash "$ROOT/scripts/install-hammerspoon.sh"
+  )"
+  echo "$out_hs" | grep -q "install Hammerspoon ${pair#*:} "
+done
+
 echo "Minimal macOS Intel tests passed."

@@ -285,7 +285,12 @@ else
   echo "  kitty: skipped (disabled by user selection)"
 fi
 
-# 6. Git Availability Check
+# 6. Hammerspoon: the hotkey layer that drives yabai
+if [ "${INSTALL_YABAI:-1}" != 0 ] && [ -f "$SCRIPT_DIR/install-hammerspoon.sh" ]; then
+  bash "$SCRIPT_DIR/install-hammerspoon.sh"
+fi
+
+# 7. Git Availability Check
 if command -v git_usable >/dev/null 2>&1 && git_usable; then
   echo "  ✓ git: available ($(command -v git))"
 else
