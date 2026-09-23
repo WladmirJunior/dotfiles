@@ -10,6 +10,12 @@
 
 local M = {}
 
+-- Load every extension up front. A lazy load prints "-- Loading extension",
+-- and a print from a callback that outlived an `hs` CLI call raises "ipc port
+-- is no longer valid", which pops the console open.
+local _ = { hs.alert, hs.application, hs.canvas, hs.chooser, hs.eventtap, hs.fs, hs.geometry,
+  hs.json, hs.screen, hs.spaces, hs.task, hs.timer, hs.urlevent, hs.window }
+
 local function find_yabai()
   for _, p in ipairs({ os.getenv('HOME') .. '/.local/bin/yabai', '/opt/homebrew/bin/yabai', '/usr/local/bin/yabai' }) do
     if hs.fs.attributes(p, 'mode') == 'file' then return p end
@@ -110,11 +116,13 @@ local function cleanup_spaces(leave_current)
   end
 end
 
--- yabai reports window/space events; the signal calls back through the `hs`
--- command-line client (hs.ipc, loaded by init.lua).
-local HS_CLI = hs.processInfo.bundlePath .. '/Contents/Frameworks/hs/hs'
+-- yabai reports window/space events through a hammerspoon:// URL (not the
+-- `hs` CLI, whose print redirection breaks callbacks that run afterwards).
+hs.urlevent.bind('yabai-cleanup', function(_, params)
+  cleanup_spaces(params.leave == 'true')
+end)
 local function add_signal(label, event, leave)
-  local action = string.format("%s -c 'package.loaded.yabai.cleanup_spaces(%s)'", HS_CLI, tostring(leave))
+  local action = string.format("open -g 'hammerspoon://yabai-cleanup?leave=%s'", tostring(leave))
   run(string.format('"$Y" -m signal --add label=%s event=%s action="%s"', label, event, action))
 end
 add_signal('hs_cleanup_window', 'window_destroyed', true)
