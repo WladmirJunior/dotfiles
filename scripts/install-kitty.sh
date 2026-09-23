@@ -138,8 +138,12 @@ mountpoint="$tmp_dir/mnt"
 stage="$tmp_dir/kitty.app"
 mounted=0
 
+# bash 3.2 under `set -eu` hands an EXIT trap $?=0 after an unbound-variable
+# abort, so a failure would exit 0. install_ok marks the only real success.
+install_ok=0
 cleanup() {
   local rc=$?
+  [ "$install_ok" = 1 ] || [ "$rc" != 0 ] || rc=1
   if [ "$mounted" -eq 1 ]; then
     "$HDIUTIL_BIN" detach "$mountpoint" -quiet 2>/dev/null || true
   fi
@@ -205,3 +209,4 @@ mkdir -p "$HOME/.local/bin"
 [ -f "$DEST/Contents/MacOS/kitten" ] && ln -sfn "$DEST/Contents/MacOS/kitten" "$HOME/.local/bin/kitten"
 
 echo "  ✓ Kitty: installed ($VERSION -> $DEST)"
+install_ok=1

@@ -129,7 +129,16 @@ if [ "${DRY_RUN:-0}" = 1 ]; then
 fi
 
 tmp_dir="$(mktemp -d -t hammerspoon-install.XXXXXX)"
-trap 'rm -rf "$tmp_dir"' EXIT INT TERM
+# bash 3.2 under `set -eu` hands an EXIT trap $?=0 after an unbound-variable
+# abort, so a failure would exit 0. install_ok marks the only real success.
+install_ok=0
+cleanup() {
+  local rc=$?
+  rm -rf "$tmp_dir"
+  [ "$install_ok" = 1 ] || [ "$rc" != 0 ] || rc=1
+  exit "$rc"
+}
+trap cleanup EXIT INT TERM
 zip="$tmp_dir/Hammerspoon.zip"
 
 echo "  Hammerspoon: downloading $VERSION..."
@@ -167,3 +176,4 @@ echo "  ✓ Hammerspoon: installed ($VERSION -> $DEST)"
 link_config
 enable_desktop_hotkeys
 launch
+install_ok=1

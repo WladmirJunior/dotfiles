@@ -36,6 +36,9 @@ export DOTFILES_INSTALLER_API
 TX_LOG="${TX_LOG:-$HOME/.dotfiles-install.jsonl}"
 TX_LAST="${TX_LAST:-$HOME/.dotfiles-install.last.jsonl}"
 TX_LOCK_DIR="${TX_LOCK_DIR:-$TX_LOG.lock}"
+# Exported with the tx_* functions: a child installer script that calls them
+# must append to this same journal (and would die on `set -u` without it).
+export TX_LOG TX_LAST TX_LOCK_DIR
 TX_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$TX_LIB_DIR/trash.sh"
 
