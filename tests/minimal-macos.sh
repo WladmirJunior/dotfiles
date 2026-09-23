@@ -124,19 +124,36 @@ exit 0
 SH
 chmod +x "$TMP/bin/curl"
 
+# Mock python3 like the CLT stub of a bare Mac: it pops the install dialog and fails.
+cat > "$TMP/bin/python3" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$PYTHON_LOG"
+exit 1
+SH
+chmod +x "$TMP/bin/python3"
+
+# A bare Monterey has no /usr/bin/jq (macOS 15+ ships one): hide it.
+mkdir -p "$TMP/sysbin"
+for f in /usr/bin/*; do
+  case "${f##*/}" in jq|python3) continue ;; esac
+  ln -s "$f" "$TMP/sysbin/${f##*/}"
+done
+
 # -----------------------------------------------------------------------------
 # Test 1: macOS Intel x86_64 minimal install
 # -----------------------------------------------------------------------------
 BREW_LOG="$TMP/brew.log"
 XCODE_SELECT_LOG="$TMP/xcode-select.log"
 CURL_LOG="$TMP/curl.log"
-export BREW_LOG XCODE_SELECT_LOG CURL_LOG
+PYTHON_LOG="$TMP/python.log"
+export BREW_LOG XCODE_SELECT_LOG CURL_LOG PYTHON_LOG
 : > "$BREW_LOG"
 : > "$XCODE_SELECT_LOG"
 : > "$CURL_LOG"
+: > "$PYTHON_LOG"
 
 HOME="$TMP/home" \
-PATH="$TMP/bin:/usr/bin:/bin" \
+PATH="$TMP/bin:$TMP/sysbin:/bin" \
 XDG_STATE_HOME="$TMP/state" \
 DOTFILES_DIR="$TMP/dotfiles" \
 PACKAGES_DARWIN_MANIFEST="$TMP/dotfiles/config/test-manifest.tsv" \
@@ -152,6 +169,10 @@ PROFILE="minimal" \
 [ ! -s "$BREW_LOG" ] || { echo "FAIL: brew was called!" >&2; exit 1; }
 # - xcode-select --install was NEVER called
 ! grep -q -- '--install' "$XCODE_SELECT_LOG" || { echo "FAIL: xcode-select --install was called!" >&2; exit 1; }
+# - python3 (a CLT stub on a bare Mac) was NEVER called, even without jq
+[ ! -s "$PYTHON_LOG" ] || { echo "FAIL: python3 was called!" >&2; exit 1; }
+# - the transaction log written without jq is valid JSONL
+[ -s "$TMP/home/.dotfiles-install.jsonl" ] && jq -e . "$TMP/home/.dotfiles-install.jsonl" >/dev/null
 # - Correct x86_64 asset was downloaded
 grep -q 'mocktool-x86_64.tar.gz' "$CURL_LOG"
 ! grep -q 'mocktool-arm64.tar.gz' "$CURL_LOG" || { echo "FAIL: arm64 asset downloaded on x86_64!" >&2; exit 1; }

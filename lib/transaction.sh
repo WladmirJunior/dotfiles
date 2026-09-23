@@ -106,9 +106,91 @@ _tx_seq() { TX_SEQ=$((${TX_SEQ:-0} + 1)); }
 
 _tx_have_jq() { command -v jq >/dev/null 2>&1; }
 
+# Pure-shell JSON fallback for hosts without jq. python3 is NOT an option: on a
+# Mac without the Command Line Tools /usr/bin/python3 is a stub that pops the
+# CLT install dialog and fails, and the minimal macOS profile must never need
+# the CLT. Encoder and parser cover the subset this log uses: an object whose
+# values are strings or arrays of strings.
+
+# _tx_json_str S: print S as a JSON string literal.
+_tx_json_str() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\t'/\\t}"
+  s="${s//$'\r'/\\r}"
+  printf '"%s"' "$s"
+}
+
+# _tx_json_arr ARGS...: print ARGS as a JSON array of strings.
+_tx_json_arr() {
+  local out="" a
+  for a in "$@"; do out="$out${out:+,}$(_tx_json_str "$a")"; done
+  printf '[%s]' "$out"
+}
+
+# _tx_json_parse LINE: parse one log entry (written by jq or by the encoder
+# above) into _TX_J_OP, _TX_J_UNDO[] and _TX_J_CLEANUP[]. Returns 1 when the
+# line is not a well-formed entry.
+_tx_json_parse() {
+  local s="$1" n=${#1} i=0 c key="" tok hex in_arr=0 expect_key=1
+  _TX_J_OP="?"; _TX_J_UNDO=(); _TX_J_CLEANUP=()
+  [ "${s:0:1}" = "{" ] || return 1
+  while [ "$i" -lt "$n" ]; do
+    c="${s:i:1}"; i=$((i + 1))
+    case "$c" in
+      '"')
+        tok=""
+        while :; do
+          [ "$i" -lt "$n" ] || return 1
+          c="${s:i:1}"; i=$((i + 1))
+          case "$c" in
+            '"') break ;;
+            \\)
+              c="${s:i:1}"; i=$((i + 1))
+              case "$c" in
+                n) tok="$tok"$'\n' ;;
+                t) tok="$tok"$'\t' ;;
+                r) tok="$tok"$'\r' ;;
+                b) tok="$tok"$'\b' ;;
+                f) tok="$tok"$'\f' ;;
+                u)
+                  hex="${s:i:4}"; i=$((i + 4))
+                  # jq and json.dumps only \u-escape control characters.
+                  printf -v hex '%03o' "0x$hex"
+                  printf -v hex '%b' "\\0$hex"
+                  tok="$tok$hex"
+                  ;;
+                *) tok="$tok$c" ;;
+              esac
+              ;;
+            *) tok="$tok$c" ;;
+          esac
+        done
+        if [ "$in_arr" = 1 ]; then
+          case "$key" in
+            undo) _TX_J_UNDO+=("$tok") ;;
+            cleanup) _TX_J_CLEANUP+=("$tok") ;;
+          esac
+        elif [ "$expect_key" = 1 ]; then
+          key="$tok"; expect_key=0
+        else
+          [ "$key" = op ] && _TX_J_OP="$tok"
+          expect_key=1
+        fi
+        ;;
+      '[') in_arr=1 ;;
+      ']') in_arr=0; expect_key=1 ;;
+      ',') [ "$in_arr" = 1 ] || expect_key=1 ;;
+    esac
+  done
+  return 0
+}
+
 # _tx_record OP UNDO_ARGV...: append one JSONL entry. OP is a human label; the
-# rest is the undo command as separate argv tokens. Uses jq when present, else a
-# small python encoder (both available before/after step 01 on every target).
+# rest is the undo command as separate argv tokens. Uses jq when present, else
+# the pure-shell encoder.
 _tx_record() {
   local op="$1"; shift
   if _tx_have_jq; then
@@ -116,10 +198,7 @@ _tx_record() {
     args_json=$(printf '%s\n' "$@" | jq -R . | jq -cs .)
     printf '{"op":%s,"undo":%s}\n' "$(printf '%s' "$op" | jq -R .)" "$args_json" >> "$TX_LOG"
   else
-    # python fallback, via `-c` (no heredoc — see _tx_exec_undo note: heredocs
-    # inside export -f'd functions corrupt in child shells).
-    OP="$op" python3 -c 'import json,os,sys
-print(json.dumps({"op":os.environ["OP"],"undo":sys.argv[1:]},ensure_ascii=False))' "$@" >> "$TX_LOG"
+    printf '{"op":%s,"undo":%s}\n' "$(_tx_json_str "$op")" "$(_tx_json_arr "$@")" >> "$TX_LOG"
   fi
 }
 
@@ -137,9 +216,8 @@ _tx_record_backup() {
     printf '{"op":%s,"undo":%s,"cleanup":%s}\n' \
       "$(printf '%s' "$op" | jq -R .)" "$args_json" "$cleanup_json" >> "$TX_LOG"
   else
-    OP="$op" BACKUP="$backup" CLEANUP_DEST="$cleanup_dest" ORIGIN="$origin" python3 -c 'import json,os,sys
-print(json.dumps({"op":os.environ["OP"],"undo":sys.argv[1:],"cleanup":["setup_trash_mv",os.environ["BACKUP"],os.environ["CLEANUP_DEST"],os.environ["ORIGIN"]]},ensure_ascii=False))' \
-      "$@" >> "$TX_LOG"
+    printf '{"op":%s,"undo":%s,"cleanup":%s}\n' "$(_tx_json_str "$op")" "$(_tx_json_arr "$@")" \
+      "$(_tx_json_arr setup_trash_mv "$backup" "$cleanup_dest" "$origin")" >> "$TX_LOG"
   fi
 }
 
@@ -281,21 +359,8 @@ _tx_exec_undo() {
       decoded+=("$(printf '%s' "$b64" | base64 -d 2>/dev/null)")
     done < <(printf '%s' "$line" | jq -r '([.op // "?"] + (.undo // [])) | .[] | @base64' 2>/dev/null)
   else
-    # python fallback. NOTE: no heredoc here: a heredoc inside a function that
-    # gets `export -f`'d is re-serialized by bash and corrupts (the trailing
-    # `|| true` ends up after the PY terminator -> syntax error in child shells
-    # that inherit the exported function). Use `python3 -c` with the program as
-    # a single-quoted arg instead, which survives export -f intact.
-    while IFS= read -r b64; do
-      [ -z "$b64" ] && continue
-      decoded+=("$(printf '%s' "$b64" | base64 -d 2>/dev/null)")
-    done < <(LINE="$line" python3 -c 'import base64,json,os
-try:
-    d=json.loads(os.environ["LINE"])
-except Exception:
-    raise SystemExit(0)
-for t in [str(d.get("op") or "?")] + [str(u) for u in (d.get("undo") or [])]:
-    print(base64.b64encode(t.encode()).decode())' 2>/dev/null)
+    _tx_json_parse "$line" || return 0
+    decoded=("$_TX_J_OP" ${_TX_J_UNDO[@]+"${_TX_J_UNDO[@]}"})
   fi
   [ "${#decoded[@]}" -ge 1 ] || return 0
   TX_UNDO_LAST_OP="${decoded[0]}"
@@ -309,9 +374,8 @@ for t in [str(d.get("op") or "?")] + [str(u) for u in (d.get("undo") or [])]:
 }
 
 # _tx_exec_cleanup LINE: run the entry's .cleanup argv, if any. Decoded and
-# executed IN THIS SHELL (both branches) because a cleanup can name an
-# exported shell function (setup_trash_mv), which a python subprocess could
-# never exec.
+# executed IN THIS SHELL because a cleanup can name an exported shell function
+# (setup_trash_mv).
 _tx_exec_cleanup() {
   local line="$1"
   [ -z "$line" ] && return 0
@@ -322,18 +386,8 @@ _tx_exec_cleanup() {
       argv+=("$(printf '%s' "$b64" | base64 -d 2>/dev/null)")
     done < <(printf '%s' "$line" | jq -r '.cleanup[]? | @base64' 2>/dev/null)
   else
-    # python fallback via `-c` (no heredoc; see the _tx_exec_undo note on
-    # export -f corruption). Emits base64 tokens for the shell to execute.
-    while IFS= read -r b64; do
-      [ -z "$b64" ] && continue
-      argv+=("$(printf '%s' "$b64" | base64 -d 2>/dev/null)")
-    done < <(LINE="$line" python3 -c 'import base64,json,os
-try:
-    d=json.loads(os.environ["LINE"])
-except Exception:
-    raise SystemExit(0)
-for t in [str(u) for u in (d.get("cleanup") or [])]:
-    print(base64.b64encode(t.encode()).decode())' 2>/dev/null)
+    _tx_json_parse "$line" || return 0
+    argv=(${_TX_J_CLEANUP[@]+"${_TX_J_CLEANUP[@]}"})
   fi
   [ "${#argv[@]}" -eq 0 ] || "${argv[@]}" >/dev/null 2>&1 \
     || echo "tx: commit cleanup failed: ${argv[*]}" >&2
@@ -388,7 +442,8 @@ tx_commit() {
   tx_release_lock
 }
 
-export -f tx_init tx_release_lock _tx_seq _tx_have_jq _tx_record _tx_record_backup \
+export -f tx_init tx_release_lock _tx_seq _tx_have_jq _tx_json_str _tx_json_arr _tx_json_parse \
+  _tx_record _tx_record_backup \
   tx_brew_install tx_brew_cask \
   tx_apt_install tx_pacman_install tx_dnf_install tx_brew_self tx_git_clone tx_created_path \
   tx_mkdir tx_symlink tx_run \

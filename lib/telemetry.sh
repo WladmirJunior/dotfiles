@@ -11,12 +11,20 @@
 #
 # Telemetry is strictly best-effort: every failure path (no encoder, read-only
 # state dir, full disk) returns 0 so it can NEVER fail or abort an install.
-# JSON encoding follows the jq-or-python pattern of lib/transaction.sh; python
-# uses `-c` (no heredoc) so the function survives `export -f` intact.
+# JSON encoding uses jq when present, else a pure-shell encoder.
 
 TELEMETRY_LOG="${DOTFILES_TELEMETRY_LOG:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/runs.jsonl}"
 
 _telemetry_have_jq() { command -v jq >/dev/null 2>&1; }
+
+# _telemetry_json_str S: S as a JSON string literal (control characters dropped).
+_telemetry_json_str() {
+  local s
+  s="$(printf '%s' "$1" | tr -d '\000-\037')"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  printf '"%s"' "$s"
+}
 
 # telemetry_record_step STEP RC DURATION_S MODE OS
 telemetry_record_step() {
@@ -32,14 +40,10 @@ telemetry_record_step() {
       --argjson rc "$rc" --argjson duration "$duration" \
       '{timestamp:$ts,repo:"public",step:$step,rc:$rc,duration_s:$duration,mode:$mode,os:$os}' \
       2>/dev/null)" || return 0
-  elif command -v python3 >/dev/null 2>&1; then
-    line="$(TS="$ts" STEP="$step" RC="$rc" DURATION="$duration" MODE="$mode" OS="$os" \
-      python3 -c 'import json,os
-e=os.environ
-print(json.dumps({"timestamp":e["TS"],"repo":"public","step":e["STEP"],"rc":int(e["RC"]),"duration_s":int(e["DURATION"]),"mode":e["MODE"],"os":e["OS"]},ensure_ascii=False))' \
-      2>/dev/null)" || return 0
   else
-    return 0
+    # No python fallback: on macOS without the CLT /usr/bin/python3 is a stub
+    # that pops the install dialog.
+    line="{\"timestamp\":$(_telemetry_json_str "$ts"),\"repo\":\"public\",\"step\":$(_telemetry_json_str "$step"),\"rc\":$rc,\"duration_s\":$duration,\"mode\":$(_telemetry_json_str "$mode"),\"os\":$(_telemetry_json_str "$os")}"
   fi
   [ -n "$line" ] || return 0
   mkdir -p "$(dirname "$TELEMETRY_LOG")" 2>/dev/null || return 0
@@ -48,4 +52,4 @@ print(json.dumps({"timestamp":e["TS"],"repo":"public","step":e["STEP"],"rc":int(
 }
 
 export TELEMETRY_LOG
-export -f _telemetry_have_jq telemetry_record_step 2>/dev/null || true
+export -f _telemetry_have_jq _telemetry_json_str telemetry_record_step 2>/dev/null || true

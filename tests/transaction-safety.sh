@@ -166,34 +166,45 @@ grep -q "^$TMP/mf-replaced -> " "$SETUP_TRASH_DIR/MANIFEST"
   [ ! -e "$SETUP_TRASH_DIR" ]         # nothing went to quarantine, no manifest
 )
 
-# ── python fallback (no jq): deferred undo and commit cleanup still run the
-#    exported setup_trash_mv in-shell (a subprocess could not exec a function) ─
-if command -v python3 >/dev/null 2>&1; then
-  (
-    _tx_have_jq() { return 1; }
-    SETUP_TRASH_DIR="$TMP/trash-nojq"
-    TX_LOG="$TMP/tx-nojq.jsonl"
-    TX_LOCK_DIR="$TX_LOG.lock"
-    tx_init
-    printf 'old\n' > "$TMP/nj-file"
-    tx_backup_path "test:backup" "$TMP/nj-file" "$TMP/nj-file.bak"
-    tx_commit >/dev/null
-    [ ! -e "$TMP/nj-file.bak" ]
-    grep -q "^$TMP/nj-file -> " "$SETUP_TRASH_DIR/MANIFEST"
-  )
-  (
-    _tx_have_jq() { return 1; }
-    SETUP_TRASH_DIR="$TMP/trash-nojq-rb"
-    TX_LOG="$TMP/tx-nojq-rb.jsonl"
-    TX_LOCK_DIR="$TX_LOG.lock"
-    tx_init
-    tx_created_path "$TMP/njr-created"
-    printf 'made\n' > "$TMP/njr-created"
-    tx_rollback >/dev/null
-    [ ! -e "$TMP/njr-created" ]
-    grep -q "^$TMP/njr-created -> " "$SETUP_TRASH_DIR/MANIFEST"
-  )
-fi
+# ── pure-shell fallback (no jq, never python3: it is a CLT-install stub on a
+#    bare Mac): deferred undo and commit cleanup run setup_trash_mv in-shell ──
+(
+  _tx_have_jq() { return 1; }
+  _TX_WEIRD=$'a b\\c"d\te\nf'
+  _TX_JSON="$(printf '{"op":%s,"undo":%s}' "$(_tx_json_str "op:$_TX_WEIRD")" "$(_tx_json_arr x "$_TX_WEIRD" "")")"
+  if command -v jq >/dev/null 2>&1; then
+    [ "$(printf '%s' "$_TX_JSON" | jq -r '.undo[1]')" = "$_TX_WEIRD" ]
+  fi
+  _tx_json_parse "$_TX_JSON"
+  [ "$_TX_J_OP" = "op:$_TX_WEIRD" ]
+  [ "${#_TX_J_UNDO[@]}" -eq 3 ] && [ "${_TX_J_UNDO[1]}" = "$_TX_WEIRD" ] && [ -z "${_TX_J_UNDO[2]}" ]
+  _tx_json_parse '{"op": "p", "undo": ["a\u0001b"], "cleanup": ["c"]}'
+  [ "$_TX_J_OP" = p ] && [ "${_TX_J_UNDO[0]}" = $'a\001b' ] && [ "${_TX_J_CLEANUP[0]}" = c ]
+)
+(
+  _tx_have_jq() { return 1; }
+  SETUP_TRASH_DIR="$TMP/trash-nojq"
+  TX_LOG="$TMP/tx-nojq.jsonl"
+  TX_LOCK_DIR="$TX_LOG.lock"
+  tx_init
+  printf 'old\n' > "$TMP/nj-file"
+  tx_backup_path "test:backup" "$TMP/nj-file" "$TMP/nj-file.bak"
+  tx_commit >/dev/null
+  [ ! -e "$TMP/nj-file.bak" ]
+  grep -q "^$TMP/nj-file -> " "$SETUP_TRASH_DIR/MANIFEST"
+)
+(
+  _tx_have_jq() { return 1; }
+  SETUP_TRASH_DIR="$TMP/trash-nojq-rb"
+  TX_LOG="$TMP/tx-nojq-rb.jsonl"
+  TX_LOCK_DIR="$TX_LOG.lock"
+  tx_init
+  tx_created_path "$TMP/njr-created"
+  printf 'made\n' > "$TMP/njr-created"
+  tx_rollback >/dev/null
+  [ ! -e "$TMP/njr-created" ]
+  grep -q "^$TMP/njr-created -> " "$SETUP_TRASH_DIR/MANIFEST"
+)
 
 # ── Quarantine: tx_commit prunes only expired per-run dirs ────────────────────
 old_epoch=$(( $(date +%s) - 100 * 86400 ))
