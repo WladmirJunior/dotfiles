@@ -49,6 +49,7 @@ end
 -- Mission Control (the only way without yabai's scripting addition).
 local digit_keys = { '1', '2', '3', '4', '5', '6', '7', '8', '9' }
 local last_space
+local schedule_compact -- defined below, with compact_spaces
 
 local function display_spaces()
   local spaces = query('--spaces --display') or {}
@@ -131,7 +132,8 @@ local function move_to_space(n)
     local last = spaces[#spaces]
     idx = (last and #last.windows == 0) and last.index or add_space(#spaces)
   end
-  if idx then run('"$Y" -m window --space ' .. idx) end
+  -- Moving the last window out of a desktop may leave an empty one behind.
+  if idx then run('"$Y" -m window --space ' .. idx, function() schedule_compact() end) end
 end
 
 local function back_and_forth()
@@ -180,7 +182,7 @@ local function compact_spaces()
   if cover then hs.timer.doAfter(0.5, function() cover:delete() end) end
 end
 
-local function schedule_compact()
+schedule_compact = function()
   if compact_timer then compact_timer:stop() end
   compact_timer = hs.timer.doAfter(SWITCH_SETTLE, function()
     compact_timer = nil
