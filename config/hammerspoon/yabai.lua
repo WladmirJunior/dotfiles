@@ -38,40 +38,42 @@ local function remember_space()
   if cur then last_space = cur.index end
 end
 
--- space_index(n): yabai index of desktop N on the focused display, creating
--- desktops up to N when they do not exist yet. nil if creation failed.
+-- Desktops are dynamic: using a number past the last desktop appends one new
+-- desktop, and an empty desktop is removed as soon as it is left (or its last
+-- window closes), so the numbers always name the desktops that hold windows.
+
+-- space_index(n): yabai index of desktop N on the focused display; past the
+-- last one, a new desktop is appended. nil if creation failed.
 local function space_index(n)
   local spaces = query('--spaces --display') or {}
-  if #spaces < n then
-    local screen = hs.screen.mainScreen()
-    for _ = #spaces + 1, n do
-      local ok, err = hs.spaces.addSpaceToScreen(screen, false)
-      if not ok then
-        hs.spaces.closeMissionControl()
-        hs.alert.show('Could not create desktop ' .. n .. ': ' .. tostring(err))
-        return nil
-      end
-    end
-    hs.spaces.closeMissionControl()
-    -- Mission Control needs a moment to settle before yabai sees the new ones.
-    for _ = 1, 20 do
-      spaces = query('--spaces --display') or {}
-      if #spaces >= n then break end
-      hs.timer.usleep(50000)
-    end
+  if spaces[n] then return spaces[n].index end
+  local count = #spaces
+  local ok, err = hs.spaces.addSpaceToScreen(hs.screen.mainScreen(), true)
+  if not ok then
+    hs.alert.show('Could not create a desktop: ' .. tostring(err))
+    return nil
   end
-  return spaces[n] and spaces[n].index
+  -- Mission Control needs a moment to settle before yabai sees the new one.
+  for _ = 1, 20 do
+    spaces = query('--spaces --display') or {}
+    if #spaces > count then return spaces[#spaces].index end
+    hs.timer.usleep(50000)
+  end
+  return nil
+end
+
+local function focus_index(idx)
+  remember_space()
+  run('"$Y" -m space --focus ' .. idx, function(code)
+    if code ~= 0 and idx >= 1 and idx <= 9 then
+      hs.eventtap.keyStroke({ 'ctrl' }, digit_keys[idx], 0)
+    end
+  end)
 end
 
 local function goto_space(n)
   local idx = space_index(n)
-  if not idx then return end
-  remember_space()
-  run('"$Y" -m space --focus ' .. idx, function(code)
-    if code ~= 0 and n >= 1 and n <= 9 then
-      hs.eventtap.keyStroke({ 'ctrl' }, digit_keys[n], 0)
-    end
-  end)
+  if idx then focus_index(idx) end
 end
 
 local function move_to_space(n)
@@ -80,8 +82,41 @@ local function move_to_space(n)
 end
 
 local function back_and_forth()
-  if last_space then goto_space(last_space) end
+  if last_space then focus_index(last_space) end
 end
+
+-- cleanup_spaces(leave_current): remove every empty desktop that is not on
+-- screen. With leave_current (a window just closed), an empty desktop on
+-- screen is left first; the resulting space_changed signal then removes it.
+local function cleanup_spaces(leave_current)
+  local spaces = query('--spaces --display') or {}
+  if #spaces <= 1 then return end
+  local removed = false
+  for _, sp in ipairs(spaces) do
+    if #sp.windows == 0 and not sp['is-visible'] and not sp['is-native-fullscreen'] then
+      if hs.spaces.removeSpace(sp.id, false) then removed = true end
+    end
+  end
+  if removed then hs.spaces.closeMissionControl() end
+  if leave_current then
+    local cur = query('--spaces --space')
+    spaces = query('--spaces --display') or {}
+    if cur and #cur.windows == 0 and #spaces > 1 then
+      run('"$Y" -m space --focus ' .. (cur.index > 1 and cur.index - 1 or cur.index + 1))
+    end
+  end
+end
+
+-- yabai reports window/space events; the signal calls back through the `hs`
+-- command-line client (hs.ipc, loaded by init.lua).
+local HS_CLI = hs.processInfo.bundlePath .. '/Contents/Frameworks/hs/hs'
+local function add_signal(label, event, leave)
+  local action = string.format("%s -c 'package.loaded.yabai.cleanup_spaces(%s)'", HS_CLI, tostring(leave))
+  run(string.format('"$Y" -m signal --add label=%s event=%s action="%s"', label, event, action))
+end
+add_signal('hs_cleanup_window', 'window_destroyed', true)
+add_signal('hs_cleanup_app', 'application_terminated', true)
+add_signal('hs_cleanup_space', 'space_changed', false)
 
 -- ── Windows ───────────────────────────────────────────────────────────────────
 local function focus_nth(n)
@@ -145,6 +180,67 @@ local function quake_terminal()
   end
 end
 
+-- ── App panels ────────────────────────────────────────────────────────────────
+-- An app window that slides in over the current desktop and out on the next
+-- press, like the Spotify/Slack panels of the main Mac. yabai leaves it
+-- floating (yabairc rule); a hidden window is moved to the current desktop
+-- before it is shown, so showing it never jumps to another desktop.
+local function panel_frame(screen, margin)
+  local f = screen:frame()
+  return hs.geometry.rect(f.x + margin, f.y + margin, f.w - 2 * margin, f.h - 2 * margin)
+end
+
+local function toggle_panel(bundle_id, margin, duration)
+  local app = hs.application.get(bundle_id)
+  if app and not app:isHidden() and app:isFrontmost() then
+    local win = app:mainWindow()
+    if win then
+      local f = win:frame()
+      win:setFrame(hs.geometry.rect(f.x, -f.h, f.w, f.h), duration)
+      hs.timer.doAfter(duration, function() app:hide() end)
+    else
+      app:hide()
+    end
+    return
+  end
+
+  local function show(running)
+    local win = running:mainWindow() or running:allWindows()[1]
+    if not win then return false end
+    local cur = query('--spaces --space')
+    if cur then hs.execute(string.format("'%s' -m window %d --space %d", YABAI, win:id(), cur.index)) end
+    local screen = hs.screen.mainScreen()
+    local target = panel_frame(screen, margin)
+    win:setFrame(hs.geometry.rect(target.x, -target.h, target.w, target.h), 0)
+    running:unhide()
+    win:focus()
+    win:setFrame(target, duration)
+    return true
+  end
+
+  if app and show(app) then return end
+  hs.application.launchOrFocusByBundleID(bundle_id)
+  local attempts = 0
+  local poll
+  poll = hs.timer.doEvery(0.1, function()
+    attempts = attempts + 1
+    local running = hs.application.get(bundle_id)
+    if (running and show(running)) or attempts > 60 then poll:stop() end
+  end)
+end
+
+local function close_window()
+  local win = hs.window.focusedWindow()
+  if win and not win:close() then hs.eventtap.keyStroke({ 'cmd' }, 'w', 0) end
+end
+
+local function kill_app()
+  local app = hs.application.frontmostApplication()
+  if not app then return end
+  if app:bundleID() == 'com.apple.finder' and not hs.window.focusedWindow() then return end
+  if app:isUnresponsive() then app:kill9() else app:kill() end
+end
+
 -- ── Menu anywhere: fuzzy-pick any menu item of the frontmost app ──────────────
 local function menu_anywhere()
   local app = hs.application.frontmostApplication()
@@ -182,11 +278,10 @@ local bindings = {
   { ctrl_opt, 'tab', 'Workspace back and forth', function()
     run('"$Y" -m space --focus recent', function(code) if code ~= 0 then back_and_forth() end end)
   end },
-  { opt, 'left', 'Focus left', y('"$Y" -m window --focus west || "$Y" -m display --focus west') },
-  { opt, 'down', 'Focus down', y('"$Y" -m window --focus south || "$Y" -m display --focus south') },
-  { opt, 'up', 'Focus up', y('"$Y" -m window --focus north || "$Y" -m display --focus north') },
-  { opt, 'right', 'Focus right', y('"$Y" -m window --focus east || "$Y" -m display --focus east') },
   { opt, 'tab', 'Focus previous window', y('"$Y" -m window --focus recent') },
+  { opt, 'w', 'Close window', close_window },
+  { opt, 'q', 'Quit app', kill_app },
+  { opt, 'm', 'Music panel', function() toggle_panel('com.apple.Music', 12, 0.22) end },
   { ctrl_opt_s, 'up', 'Move window to previous workspace', y('"$Y" -m window --space prev') },
   { ctrl_opt_s, 'down', 'Move window to next workspace', y('"$Y" -m window --space next') },
   { ctrl_opt_s, 'pageup', 'Move column to previous workspace', y('"$Y" -m window --space prev') },
@@ -244,6 +339,7 @@ end
 table.insert(bindings, { ctrl_opt, 'space', 'Command palette', command_palette })
 
 M.goto_space, M.move_to_space, M.new_terminal_window = goto_space, move_to_space, new_terminal_window
+M.cleanup_spaces, M.toggle_panel = cleanup_spaces, toggle_panel
 
 M.hotkeys = {}
 for _, b in ipairs(bindings) do
