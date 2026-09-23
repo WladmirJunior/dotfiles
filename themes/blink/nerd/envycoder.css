@@ -1,0 +1,27 @@
+/* EnvyCodeR Nerd Font Mono: Blink Shell font stylesheet
+ *
+ * Blink > Appearance > Fonts > + : paste the URL of this file and use
+ * the Font-Family Name "EnvyCodeR Nerd Font Mono" (must match exactly).
+ * Faces served from ryanoasis/nerd-fonts v3.5.1 (pinned tag).
+ */
+
+@font-face {
+  font-family: "EnvyCodeR Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.5.1/patched-fonts/EnvyCodeR/EnvyCodeRNerdFontMono-Regular.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "EnvyCodeR Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.5.1/patched-fonts/EnvyCodeR/EnvyCodeRNerdFontMono-Bold.ttf") format("truetype");
+  font-weight: bold;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "EnvyCodeR Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.5.1/patched-fonts/EnvyCodeR/EnvyCodeRNerdFontMono-Italic.ttf") format("truetype");
+  font-weight: normal;
+  font-style: italic;
+}

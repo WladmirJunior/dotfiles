@@ -1,0 +1,13 @@
+/* GohuFontuni11 Nerd Font Mono: Blink Shell font stylesheet
+ *
+ * Blink > Appearance > Fonts > + : paste the URL of this file and use
+ * the Font-Family Name "GohuFontuni11 Nerd Font Mono" (must match exactly).
+ * Faces served from ryanoasis/nerd-fonts v3.5.1 (pinned tag).
+ */
+
+@font-face {
+  font-family: "GohuFontuni11 Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.5.1/patched-fonts/Gohu/uni-11/GohuFontuni11NerdFontMono-Regular.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}

@@ -1,0 +1,34 @@
+/* IosevkaTerm Nerd Font Mono: Blink Shell font stylesheet
+ *
+ * Blink > Appearance > Fonts > + : paste the URL of this file and use
+ * the Font-Family Name "IosevkaTerm Nerd Font Mono" (must match exactly).
+ * Faces served from ryanoasis/nerd-fonts v3.5.1 (pinned tag).
+ */
+
+@font-face {
+  font-family: "IosevkaTerm Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.5.1/patched-fonts/IosevkaTerm/IosevkaTermNerdFontMono-Regular.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "IosevkaTerm Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.5.1/patched-fonts/IosevkaTerm/IosevkaTermNerdFontMono-Bold.ttf") format("truetype");
+  font-weight: bold;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "IosevkaTerm Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.5.1/patched-fonts/IosevkaTerm/IosevkaTermNerdFontMono-Italic.ttf") format("truetype");
+  font-weight: normal;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: "IosevkaTerm Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.5.1/patched-fonts/IosevkaTerm/IosevkaTermNerdFontMono-BoldItalic.ttf") format("truetype");
+  font-weight: bold;
+  font-style: italic;
+}

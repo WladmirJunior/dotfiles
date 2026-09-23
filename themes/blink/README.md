@@ -90,6 +90,43 @@ TTF (not the Nerd Font patched variant above), served directly as `.ttf`
 | Font-Family Name | `Terminus` |
 | CSS FONT-FAMILY STYLESHEET | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminus.css` |
 
+### Nerd Fonts (Mono variants)
+
+One stylesheet per family in `nerd/`. The faces are loaded straight from
+`ryanoasis/nerd-fonts` pinned at tag `v3.5.1`, so no font binaries live in this
+repo (DepartureMono is the exception: it is not in the nerd-fonts git tree, so
+its single `.otf` is in `fonts/`). Only the `Mono` variant is used: it keeps the
+icons one cell wide, which is what a terminal grid needs.
+
+Blink > Appearance > Fonts > `+`: paste the stylesheet URL and type the
+Font-Family Name exactly as below.
+
+| Font-Family Name | Faces | CSS FONT-FAMILY STYLESHEET |
+|---|---|---|
+| `3270 Nerd Font Mono` | Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/3270.css` |
+| `AnonymicePro Nerd Font Mono` | Bold, BoldItalic, Italic, Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/anonymicepro.css` |
+| `BigBlueTerm437 Nerd Font Mono` | Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/bigblueterm437.css` |
+| `BigBlueTermPlus Nerd Font Mono` | Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/bigbluetermplus.css` |
+| `BlexMono Nerd Font Mono` | Bold, BoldItalic, Italic, Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/blexmono.css` |
+| `DepartureMono Nerd Font Mono` | Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/departuremono.css` |
+| `EnvyCodeR Nerd Font Mono` | Bold, Italic, Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/envycoder.css` |
+| `GohuFont11 Nerd Font Mono` | Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/gohufont11.css` |
+| `GohuFont14 Nerd Font Mono` | Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/gohufont14.css` |
+| `GohuFontuni11 Nerd Font Mono` | Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/gohufontuni11.css` |
+| `GohuFontuni14 Nerd Font Mono` | Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/gohufontuni14.css` |
+| `Hack Nerd Font Mono` | Bold, BoldItalic, Italic, Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/hack.css` |
+| `InconsolataGo Nerd Font Mono` | Bold, Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/inconsolatago.css` |
+| `IosevkaTerm Nerd Font Mono` | Bold, BoldItalic, Italic, Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/iosevkaterm.css` |
+| `Mononoki Nerd Font Mono` | Bold, BoldItalic, Italic, Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/mononoki.css` |
+| `ProggyClean Nerd Font Mono` | Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/proggyclean.css` |
+| `ProggyCleanCE Nerd Font Mono` | Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/proggycleance.css` |
+| `ProggyCleanSZ Nerd Font Mono` | Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/proggycleansz.css` |
+| `Terminess Nerd Font Mono` | Bold, BoldItalic, Italic, Regular | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/nerd/terminess.css` |
+
+Not included: Monaspice (Ar/Kr/Ne/Rn/Xe) and IosevkaTermSlab. They exist only in
+the release zips, not in the nerd-fonts git tree, and their faces add up to
+~110 MB, too heavy to vendor here.
+
 ## Why the variations are separate
 
 `phosphor-archive` remaps all 16 ANSI slots to greens, which is what

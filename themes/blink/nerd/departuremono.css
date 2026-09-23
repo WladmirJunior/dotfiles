@@ -1,0 +1,13 @@
+/* DepartureMono Nerd Font Mono: Blink Shell font stylesheet
+ *
+ * Blink > Appearance > Fonts > + : paste the URL of this file and use
+ * the Font-Family Name "DepartureMono Nerd Font Mono" (must match exactly).
+ * Faces served from this repo (not in the nerd-fonts git tree).
+ */
+
+@font-face {
+  font-family: "DepartureMono Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/DepartureMonoNerdFontMono-Regular.otf") format("opentype");
+  font-weight: normal;
+  font-style: normal;
+}
