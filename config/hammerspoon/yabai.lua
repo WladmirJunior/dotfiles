@@ -1,5 +1,8 @@
 -- Keyboard layer for yabai, mirroring the OmniWM bindings of the main Mac.
 -- Hammerspoon owns the hotkeys (no skhd); every action is a `yabai -m` call.
+-- Nothing here may shadow text editing: Option/Option+Shift with arrows, - = .
+-- , and ` stay with the focused app (word jumps, dashes, Alt+. in the shell,
+-- the grave-accent dead key).
 --
 -- Workspaces are the native macOS desktops. yabai cannot create desktops
 -- without its scripting addition (SIP stays on), so a missing one is added
@@ -181,13 +184,34 @@ local function quake_terminal()
 end
 
 -- ── App panels ────────────────────────────────────────────────────────────────
--- An app window that slides in over the current desktop and out on the next
--- press, like the Spotify/Slack panels of the main Mac. yabai leaves it
--- floating (yabairc rule); a hidden window is moved to the current desktop
--- before it is shown, so showing it never jumps to another desktop.
+-- An app window that slides up from the bottom over the current desktop and
+-- back down on the next press, like the Spotify/Slack panels of the main Mac.
+-- yabai leaves it floating (yabairc rule); a hidden window is moved to the
+-- current desktop before it is shown, so showing never jumps desktops.
+--
+-- The slide only moves the window (its size is set once, off screen): a move
+-- per frame is cheap, while hs.window's animated setFrame also resizes on
+-- every step and stutters on heavy apps.
 local function panel_frame(screen, margin)
   local f = screen:frame()
   return hs.geometry.rect(f.x + margin, f.y + margin, f.w - 2 * margin, f.h - 2 * margin)
+end
+
+local slide_timer
+local function slide(win, from_y, to_y, duration, done)
+  if slide_timer then slide_timer:stop() end
+  local x = win:frame().x
+  local start = hs.timer.secondsSinceEpoch()
+  slide_timer = hs.timer.doEvery(1 / 60, function()
+    local t = math.min((hs.timer.secondsSinceEpoch() - start) / duration, 1)
+    local e = 1 - (1 - t) ^ 3
+    win:setTopLeft({ x = x, y = from_y + (to_y - from_y) * e })
+    if t >= 1 then
+      slide_timer:stop()
+      slide_timer = nil
+      if done then done() end
+    end
+  end)
 end
 
 local function toggle_panel(bundle_id, margin, duration)
@@ -196,8 +220,7 @@ local function toggle_panel(bundle_id, margin, duration)
     local win = app:mainWindow()
     if win then
       local f = win:frame()
-      win:setFrame(hs.geometry.rect(f.x, -f.h, f.w, f.h), duration)
-      hs.timer.doAfter(duration, function() app:hide() end)
+      slide(win, f.y, win:screen():fullFrame().h, duration, function() app:hide() end)
     else
       app:hide()
     end
@@ -211,10 +234,11 @@ local function toggle_panel(bundle_id, margin, duration)
     if cur then hs.execute(string.format("'%s' -m window %d --space %d", YABAI, win:id(), cur.index)) end
     local screen = hs.screen.mainScreen()
     local target = panel_frame(screen, margin)
-    win:setFrame(hs.geometry.rect(target.x, -target.h, target.w, target.h), 0)
+    local below = screen:fullFrame().h
+    win:setFrame(hs.geometry.rect(target.x, below, target.w, target.h), 0)
     running:unhide()
     win:focus()
-    win:setFrame(target, duration)
+    slide(win, below, target.y, duration)
     return true
   end
 
@@ -286,13 +310,21 @@ local bindings = {
   { ctrl_opt_s, 'down', 'Move window to next workspace', y('"$Y" -m window --space next') },
   { ctrl_opt_s, 'pageup', 'Move column to previous workspace', y('"$Y" -m window --space prev') },
   { ctrl_opt_s, 'pagedown', 'Move column to next workspace', y('"$Y" -m window --space next') },
-  { opt_s, 'left', 'Move window left', y('"$Y" -m window --swap west || "$Y" -m window --display west') },
-  { opt_s, 'down', 'Move window down', y('"$Y" -m window --swap south || "$Y" -m window --display south') },
-  { opt_s, 'up', 'Move window up', y('"$Y" -m window --swap north || "$Y" -m window --display north') },
-  { opt_s, 'right', 'Move window right', y('"$Y" -m window --swap east || "$Y" -m window --display east') },
+  { ctrl_opt, 'left', 'Focus left', y('"$Y" -m window --focus west || "$Y" -m display --focus west') },
+  { ctrl_cmd, 'left', 'Move window left', y('"$Y" -m window --swap west || "$Y" -m window --display west') },
+  { ctrl_opt, 'down', 'Focus down', y('"$Y" -m window --focus south || "$Y" -m display --focus south') },
+  { ctrl_cmd, 'down', 'Move window down', y('"$Y" -m window --swap south || "$Y" -m window --display south') },
+  { ctrl_opt, 'up', 'Focus up', y('"$Y" -m window --focus north || "$Y" -m display --focus north') },
+  { ctrl_cmd, 'up', 'Move window up', y('"$Y" -m window --swap north || "$Y" -m window --display north') },
+  { ctrl_opt, 'right', 'Focus right', y('"$Y" -m window --focus east || "$Y" -m display --focus east') },
+  { ctrl_cmd, 'right', 'Move window right', y('"$Y" -m window --swap east || "$Y" -m window --display east') },
   { ctrl_cmd, 'tab', 'Focus next monitor', y('"$Y" -m display --focus next || "$Y" -m display --focus first') },
   { ctrl_cmd, '`', 'Focus last monitor', y('"$Y" -m display --focus recent') },
-  { opt, 'return', 'Toggle fullscreen', y('"$Y" -m window --toggle zoom-fullscreen') },
+  { opt, 'f', 'Fill the screen', y('"$Y" -m window --toggle zoom-fullscreen') },
+  { opt_s, 'f', 'Native fullscreen', function()
+    local win = hs.window.focusedWindow()
+    if win then win:toggleFullScreen() end
+  end },
   { ctrl_opt_s, 'left', 'Move column left', y('"$Y" -m window --warp west') },
   { ctrl_opt_s, 'right', 'Move column right', y('"$Y" -m window --warp east') },
   { ctrl_opt, 'home', 'Move column to first', y('"$Y" -m window --warp first') },
@@ -300,19 +332,18 @@ local bindings = {
   { opt, 't', 'New Kitty window', new_terminal_window },
   { opt, 'home', 'Focus first column', y('"$Y" -m window --focus first') },
   { opt, 'end', 'Focus last column', y('"$Y" -m window --focus last') },
-  { opt, '.', 'Cycle size forward', function() cycle_size(1) end },
-  { opt, ',', 'Cycle size backward', function() cycle_size(-1) end },
-  { opt_s, 'f', 'Toggle full width', y('"$Y" -m window --toggle zoom-parent') },
+  { ctrl_opt, '.', 'Cycle size forward', function() cycle_size(1) end },
+  { ctrl_opt, ',', 'Cycle size backward', function() cycle_size(-1) end },
   { ctrl_opt, 'f', 'Expand to available width', y('"$Y" -m window --ratio abs:0.8') },
   { ctrl_opt, 'r', 'Reload Hammerspoon', function() hs.reload() end },
-  { opt, '-', 'Width -10%', y('"$Y" -m window --resize right:-60:0 || "$Y" -m window --resize left:60:0') },
-  { opt, '=', 'Width +10%', y('"$Y" -m window --resize right:60:0 || "$Y" -m window --resize left:-60:0') },
-  { opt_s, '-', 'Height -10%', y('"$Y" -m window --resize bottom:0:-60 || "$Y" -m window --resize top:0:60') },
-  { opt_s, '=', 'Height +10%', y('"$Y" -m window --resize bottom:0:60 || "$Y" -m window --resize top:0:-60') },
+  { ctrl_opt, '[', 'Width -10%', y('"$Y" -m window --resize right:-60:0 || "$Y" -m window --resize left:60:0') },
+  { ctrl_opt, ']', 'Width +10%', y('"$Y" -m window --resize right:60:0 || "$Y" -m window --resize left:-60:0') },
+  { ctrl_opt_s, '[', 'Height -10%', y('"$Y" -m window --resize bottom:0:-60 || "$Y" -m window --resize top:0:60') },
+  { ctrl_opt_s, ']', 'Height +10%', y('"$Y" -m window --resize bottom:0:60 || "$Y" -m window --resize top:0:-60') },
   { opt_s, 'b', 'Balance sizes', y('"$Y" -m space --balance') },
   { opt_s, 'r', 'Raise floating windows', raise_floating },
   { ctrl_opt, 'm', 'Menu anywhere', menu_anywhere },
-  { opt, '`', 'Quake terminal (Kitty)', quake_terminal },
+  { ctrl_opt, '`', 'Quake terminal (Kitty)', quake_terminal },
   { opt_s, 'l', 'Toggle workspace layout (bsp/stack)', toggle_layout },
   { opt_s, 'o', 'Overview (Mission Control)', function() hs.spaces.toggleMissionControl() end },
 }
