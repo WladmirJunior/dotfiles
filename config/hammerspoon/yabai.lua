@@ -7,6 +7,7 @@
 -- Workspaces are the native macOS desktops. yabai cannot create desktops
 -- without its scripting addition (SIP stays on), so a missing one is added
 -- through Mission Control (hs.spaces) the first time its number is used.
+-- Empty desktops are pruned whenever Mission Control is opened from here.
 
 local M = {}
 
@@ -14,7 +15,7 @@ local M = {}
 -- and a print from a callback that outlived an `hs` CLI call raises "ipc port
 -- is no longer valid", which pops the console open.
 local _ = { hs.alert, hs.application, hs.axuielement, hs.canvas, hs.chooser, hs.eventtap, hs.fs, hs.geometry,
-  hs.json, hs.screen, hs.spaces, hs.task, hs.timer, hs.urlevent, hs.window }
+  hs.json, hs.screen, hs.spaces, hs.task, hs.timer, hs.window }
 
 local function find_yabai()
   for _, p in ipairs({ os.getenv('HOME') .. '/.local/bin/yabai', '/opt/homebrew/bin/yabai', '/usr/local/bin/yabai' }) do
@@ -47,9 +48,7 @@ local function remember_space()
   if cur then last_space = cur.index end
 end
 
--- Desktops are dynamic: using a number past the last desktop appends one new
--- desktop, and an empty desktop is removed as soon as it is left (or its last
--- window closes), so the numbers always name the desktops that hold windows.
+-- Using a number past the last desktop appends one new desktop.
 
 -- space_index(n): yabai index of desktop N on the focused display; past the
 -- last one, a new desktop is appended. nil if creation failed.
@@ -107,6 +106,7 @@ local function goto_space(n)
   if not idx then return end
   if cur and idx == cur.index then
     hs.spaces.toggleMissionControl()
+    hs.timer.doAfter(0.6, prune_empty_spaces)
   else
     focus_index(idx)
   end
@@ -121,77 +121,24 @@ local function back_and_forth()
   if last_space then focus_index(last_space) end
 end
 
--- Removing a desktop needs Mission Control on screen (the Dock only exposes
--- the remove action there). Two things keep that from flashing:
---  * it waits for the desktop-switch slide to finish; opening Mission Control
---    mid-slide made it pop up and collapse halfway;
---  * with Screen Recording permission, a still image of the screen covers the
---    display while Mission Control opens and closes behind it.
-local SWITCH_SETTLE = 0.6
-local cleanup_timer
-
-local function remove_empty_spaces()
+-- prune_empty_spaces: remove empty desktops that are not on screen. macOS
+-- only removes a desktop through Mission Control (without yabai's scripting
+-- addition), so this runs only while Mission Control is already open and the
+-- removal causes no extra animation. Empty desktops otherwise just stay.
+local function prune_empty_spaces()
   local spaces = query('--spaces --display') or {}
-  if #spaces <= 1 then return end
-  local doomed = {}
+  local left = #spaces
   for _, sp in ipairs(spaces) do
-    if #sp.windows == 0 and not sp['is-visible'] and not sp['is-native-fullscreen'] then
-      table.insert(doomed, sp.id)
+    if left > 1 and #sp.windows == 0 and not sp['is-visible'] and not sp['is-native-fullscreen'] then
+      if hs.spaces.removeSpace(sp.id, false) then left = left - 1 end
     end
-  end
-  if #doomed == 0 then return end
-
-  local user_mc = mc_is_open()
-  local cover
-  if not user_mc and hs.screenRecordingState() then
-    local screen = hs.screen.mainScreen()
-    local img = screen:snapshot()
-    if img then
-      cover = hs.canvas.new(screen:fullFrame())
-      cover:level(hs.canvas.windowLevels.screenSaver)
-      cover[1] = { type = 'image', image = img, imageScaling = 'scaleToFit' }
-      cover:show()
-    end
-  end
-  for _, id in ipairs(doomed) do hs.spaces.removeSpace(id, false) end
-  if not user_mc then hs.spaces.closeMissionControl() end
-  if cover then
-    -- Hold the cover until Mission Control has finished closing.
-    hs.timer.doAfter(0.5, function() cover:delete() end)
   end
 end
 
--- cleanup_spaces(leave_current): remove every empty desktop that is not on
--- screen. With leave_current (a window just closed), an empty desktop on
--- screen is left first; the resulting space_changed signal then removes it.
-local function cleanup_spaces(leave_current)
-  if leave_current then
-    local cur = query('--spaces --space')
-    local spaces = query('--spaces --display') or {}
-    if cur and #cur.windows == 0 and #spaces > 1 then
-      run('"$Y" -m space --focus ' .. (cur.index > 1 and cur.index - 1 or cur.index + 1))
-      return
-    end
-  end
-  if cleanup_timer then cleanup_timer:stop() end
-  cleanup_timer = hs.timer.doAfter(SWITCH_SETTLE, function()
-    cleanup_timer = nil
-    remove_empty_spaces()
-  end)
+-- Drop signals registered by earlier versions of this file.
+for _, label in ipairs({ 'hs_cleanup_window', 'hs_cleanup_app', 'hs_cleanup_space' }) do
+  run('"$Y" -m signal --remove ' .. label .. ' 2>/dev/null')
 end
-
--- yabai reports window/space events through a hammerspoon:// URL (not the
--- `hs` CLI, whose print redirection breaks callbacks that run afterwards).
-hs.urlevent.bind('yabai-cleanup', function(_, params)
-  cleanup_spaces(params.leave == 'true')
-end)
-local function add_signal(label, event, leave)
-  local action = string.format("open -g 'hammerspoon://yabai-cleanup?leave=%s'", tostring(leave))
-  run(string.format('"$Y" -m signal --add label=%s event=%s action="%s"', label, event, action))
-end
-add_signal('hs_cleanup_window', 'window_destroyed', true)
-add_signal('hs_cleanup_app', 'application_terminated', true)
-add_signal('hs_cleanup_space', 'space_changed', false)
 
 -- ── Windows ───────────────────────────────────────────────────────────────────
 local function focus_nth(n)
@@ -307,8 +254,10 @@ local function slide_image(img, frame, from_y, to_y, duration, done)
 end
 
 local function can_snapshot()
-  return hs.screenRecordingState and hs.screenRecordingState()
+  return hs.screenRecordingState()
 end
+-- Ask once for Screen Recording (macOS shows the prompt only the first time).
+if not hs.screenRecordingState() then hs.screenRecordingState(true) end
 
 local function toggle_panel(bundle_id, margin, duration)
   local app = hs.application.get(bundle_id)
@@ -476,7 +425,7 @@ end
 table.insert(bindings, { ctrl_opt, 'space', 'Command palette', command_palette })
 
 M.goto_space, M.move_to_space, M.new_terminal_window = goto_space, move_to_space, new_terminal_window
-M.cleanup_spaces, M.toggle_panel = cleanup_spaces, toggle_panel
+M.toggle_panel = toggle_panel
 
 M.hotkeys = {}
 for _, b in ipairs(bindings) do
