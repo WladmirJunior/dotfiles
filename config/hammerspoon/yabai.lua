@@ -266,67 +266,42 @@ end
 -- yabai leaves it floating (yabairc rule); a hidden window is moved to the
 -- current desktop before it is shown, so showing never jumps desktops.
 --
--- Moving a real window every frame stutters (each step is an Accessibility
--- call the app must answer). The slide animates a snapshot in an hs.canvas
--- instead, and the real window only appears or hides at the end. Snapshots
--- need Screen Recording permission; without it the panel shows and hides
--- instantly.
+-- The slide moves the real window, position only (its size is set once, off
+-- screen). AXEnhancedUserInterface is switched off for the app while it runs:
+-- with it on, apps answer every Accessibility move slowly and the slide judders.
 local function panel_frame(screen, margin)
   local f = screen:frame()
   return hs.geometry.rect(f.x + margin, f.y + margin, f.w - 2 * margin, f.h - 2 * margin)
 end
 
-local panel_snapshots = {}
-local slide_timer, slide_canvas
+local slide_timer
 
-local function stop_slide()
+local function slide(app, win, from_y, to_y, duration, done)
   if slide_timer then slide_timer:stop() end
-  if slide_canvas then slide_canvas:delete() end
-  slide_timer, slide_canvas = nil, nil
-end
-
--- slide_image(img, frame, from_y, to_y, duration, done)
-local function slide_image(img, frame, from_y, to_y, duration, done)
-  stop_slide()
-  local c = hs.canvas.new({ x = frame.x, y = from_y, w = frame.w, h = frame.h })
-  c:level(hs.canvas.windowLevels.floating)
-  c[1] = { type = 'image', image = img, imageScaling = 'scaleToFit' }
-  c:show()
-  slide_canvas = c
+  local ax = hs.axuielement.applicationElement(app)
+  local enhanced = ax and ax:attributeValue('AXEnhancedUserInterface')
+  if enhanced then ax:setAttributeValue('AXEnhancedUserInterface', false) end
+  local x = win:frame().x
   local start = hs.timer.secondsSinceEpoch()
   slide_timer = hs.timer.doEvery(1 / 60, function()
     local t = math.min((hs.timer.secondsSinceEpoch() - start) / duration, 1)
     local e = 1 - (1 - t) ^ 3
-    c:topLeft({ x = frame.x, y = from_y + (to_y - from_y) * e })
+    win:setTopLeft({ x = x, y = from_y + (to_y - from_y) * e })
     if t >= 1 then
       slide_timer:stop()
       slide_timer = nil
+      if enhanced then ax:setAttributeValue('AXEnhancedUserInterface', true) end
       if done then done() end
-      -- Keep the image a beat so the real window is drawn before it goes.
-      hs.timer.doAfter(0.05, function()
-        c:delete()
-        if slide_canvas == c then slide_canvas = nil end
-      end)
     end
   end)
 end
-
-local function can_snapshot()
-  return hs.screenRecordingState()
-end
--- Ask once for Screen Recording (macOS shows the prompt only the first time).
-if not hs.screenRecordingState() then hs.screenRecordingState(true) end
 
 local function toggle_panel(bundle_id, margin, duration)
   local app = hs.application.get(bundle_id)
   if app and not app:isHidden() and app:isFrontmost() then
     local win = app:mainWindow()
-    local img = win and can_snapshot() and win:snapshot()
-    if img then
-      local f = win:frame()
-      panel_snapshots[bundle_id] = img
-      app:hide()
-      slide_image(img, f, f.y, win:screen():fullFrame().h, duration)
+    if win then
+      slide(app, win, win:frame().y, win:screen():fullFrame().h, duration, function() app:hide() end)
     else
       app:hide()
     end
@@ -340,17 +315,11 @@ local function toggle_panel(bundle_id, margin, duration)
     if cur then hs.execute(string.format("'%s' -m window %d --space %d", YABAI, win:id(), cur.index)) end
     local screen = hs.screen.mainScreen()
     local target = panel_frame(screen, margin)
-    win:setFrame(target, 0)
-    local img = can_snapshot() and panel_snapshots[bundle_id]
-    local function reveal()
-      running:unhide()
-      win:focus()
-    end
-    if img then
-      slide_image(img, target, screen:fullFrame().h, target.y, duration, reveal)
-    else
-      reveal()
-    end
+    local below = screen:fullFrame().h
+    win:setFrame(hs.geometry.rect(target.x, below, target.w, target.h), 0)
+    running:unhide()
+    win:focus()
+    slide(running, win, below, target.y, duration)
     return true
   end
 
