@@ -110,6 +110,23 @@ if [ -f "$D/config/yabai/yabairc" ] && [ "${INSTALL_YABAI:-1}" != 0 ]; then
   [ "${DRY_RUN:-0}" = 1 ] || chmod +x "$D/config/yabai/yabairc" 2>/dev/null || true
 fi
 
+# yabai runs as a launchd agent. It still needs Accessibility permission, which
+# only the user can grant, so a missing grant is reported, never fatal.
+YABAI_BIN="$HOME/.local/bin/yabai"
+if [ "${OS_TYPE:-$(uname)}" = Darwin ] && [ "${INSTALL_YABAI:-1}" != 0 ] && [ -x "$YABAI_BIN" ]; then
+  if [ "${DRY_RUN:-0}" = 1 ]; then
+    echo "[dry-run] $YABAI_BIN --start-service"
+  elif ! "$YABAI_BIN" -m query --spaces >/dev/null 2>&1; then
+    tx_run "yabai_service" "$YABAI_BIN" --uninstall-service -- "$YABAI_BIN" --start-service >/dev/null 2>&1 \
+      || echo "  yabai: could not start the launchd service; continuing" >&2
+    sleep 2
+    if ! "$YABAI_BIN" -m query --spaces >/dev/null 2>&1; then
+      note "yabai needs Accessibility: add $YABAI_BIN in System Settings > Privacy & Security > Accessibility, then run: yabai --restart-service"
+      open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" 2>/dev/null || true
+    fi
+  fi
+fi
+
 if command -v ya >/dev/null 2>&1; then
   YAZI_PLUGIN="$HOME/.config/yazi/plugins/git.yazi"
   if [ "${DRY_RUN:-0}" = 1 ]; then
