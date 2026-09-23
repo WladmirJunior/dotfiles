@@ -44,7 +44,7 @@ end
 --    unless the last desktop is already empty (then nothing happens);
 --  * Option+Shift+N past the last desktop sends the window to that trailing
 --    empty desktop, creating it when there is none;
---  * an empty desktop in the middle is removed (see compact_spaces below).
+--  * any other empty desktop is removed (see compact_spaces below).
 -- Each key press costs one yabai query; creating a desktop goes through
 -- Mission Control (the only way without yabai's scripting addition).
 local digit_keys = { '1', '2', '3', '4', '5', '6', '7', '8', '9' }
@@ -144,8 +144,8 @@ local function back_and_forth()
 end
 
 
--- Empty desktops in the middle (a desktop with windows comes after them)
--- are removed so the numbers stay contiguous; trailing empty ones stay. The
+-- Empty desktops off screen are removed so the numbers stay contiguous; only
+-- the last desktop may stay empty. The
 -- removal waits for the desktop-switch slide to finish (Mission Control
 -- opened mid-slide collapsed halfway) and, with Screen Recording permission,
 -- a still image of the screen covers Mission Control while it opens and closes.
@@ -154,13 +154,9 @@ local compact_timer
 
 local function compact_spaces()
   local spaces = query('--spaces --display') or {}
-  local last_used = 0
-  for i, sp in ipairs(spaces) do
-    if #sp.windows > 0 or sp['is-visible'] then last_used = i end
-  end
   local doomed = {}
   for i, sp in ipairs(spaces) do
-    if i < last_used and #sp.windows == 0 and not sp['is-visible'] and not sp['is-native-fullscreen'] then
+    if i < #spaces and #sp.windows == 0 and not sp['is-visible'] and not sp['is-native-fullscreen'] then
       table.insert(doomed, sp.id)
     end
   end
