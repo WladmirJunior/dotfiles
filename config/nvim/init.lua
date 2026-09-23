@@ -57,10 +57,15 @@ require('lazy').setup({
     build = ':TSUpdate',
     lazy = false,
     config = function()
-      require('nvim-treesitter').install({
-        'lua', 'vim', 'vimdoc', 'bash', 'dart', 'clojure', 'go', 'python',
-        'json', 'yaml', 'toml', 'markdown', 'markdown_inline', 'diff',
-      })
+      -- Building parsers needs the tree-sitter CLI and a C compiler. A Mac
+      -- without the Command Line Tools has neither (cc is a CLT-install stub),
+      -- so it keeps the parsers bundled with Neovim (lua, vim, markdown, ...).
+      if vim.fn.executable('tree-sitter') == 1 then
+        require('nvim-treesitter').install({
+          'lua', 'vim', 'vimdoc', 'bash', 'dart', 'clojure', 'go', 'python',
+          'json', 'yaml', 'toml', 'markdown', 'markdown_inline', 'diff',
+        })
+      end
       -- Start treesitter highlight for any buffer whose parser is installed.
       vim.api.nvim_create_autocmd('FileType', {
         callback = function(ev)
