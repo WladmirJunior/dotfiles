@@ -1,0 +1,81 @@
+/* Terminess Pixel 14 Nerd Font Mono — Blink Shell font stylesheet
+ *
+ * Regular family: "Terminess Pixel 14 Nerd Font Mono"
+ * Medium family:  "Terminess Pixel 14 Medium"
+ */
+
+/* Standard (Regular text default) */
+@font-face {
+  font-family: "Terminess Pixel 14 Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessPixel14NerdFontMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Terminess Pixel 14 Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessPixel14NerdFontMono-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Terminess Pixel 14 Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessPixel14NerdFontMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Terminess Pixel 14 Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessPixel14NerdFontMono-Italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+}
+@font-face {
+  font-family: "Terminess Pixel 14 Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessPixel14NerdFontMono-MediumItalic.woff2") format("woff2");
+  font-weight: 500;
+  font-style: italic;
+}
+@font-face {
+  font-family: "Terminess Pixel 14 Nerd Font Mono";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessPixel14NerdFontMono-BoldItalic.woff2") format("woff2");
+  font-weight: 700;
+  font-style: italic;
+}
+
+/* Medium as default family */
+@font-face {
+  font-family: "Terminess Pixel 14 Medium";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessPixel14NerdFontMono-Medium.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Terminess Pixel 14 Medium";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessPixel14NerdFontMono-Medium.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Terminess Pixel 14 Medium";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessPixel14NerdFontMono-Bold.woff2") format("woff2");
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Terminess Pixel 14 Medium";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessPixel14NerdFontMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Terminess Pixel 14 Medium";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessPixel14NerdFontMono-MediumItalic.woff2") format("woff2");
+  font-weight: normal;
+  font-style: italic;
+}
+@font-face {
+  font-family: "Terminess Pixel 14 Medium";
+  src: url("https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/fonts/TerminessPixel14NerdFontMono-BoldItalic.woff2") format("woff2");
+  font-weight: bold;
+  font-style: italic;
+}

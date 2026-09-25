@@ -50,15 +50,26 @@ woff2 faces it references.
 
 In the app: `config` > Appearance > Fonts > `+`, then fill BOTH fields:
 
-| Field | Value |
-|---|---|
-| Font-Family Name | `Terminess Pixel 24 Nerd Font Mono` |
-| CSS FONT-FAMILY STYLESHEET | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminess-pixel.css` |
+### Terminess Pixel (Bitmap vectorizado autêntico)
+
+Escolha a base de pixel desejada e o peso padrão (Regular ou Medium):
+
+| Base | Peso Padrão | Font-Family Name | CSS FONT-FAMILY STYLESHEET |
+|---|---|---|---|
+| **Pixel 12** (chunky retrô CRT) | Regular | `Terminess Pixel 12 Nerd Font Mono` | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminess-pixel-12.css` |
+| **Pixel 12** | Medium | `Terminess Pixel 12 Medium` | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminess-pixel-12.css` |
+| **Pixel 14** | Regular | `Terminess Pixel 14 Nerd Font Mono` | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminess-pixel-14.css` |
+| **Pixel 14** | Medium | `Terminess Pixel 14 Medium` | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminess-pixel-14.css` |
+| **Pixel 16** (clássico DOS/VGA) | Regular | `Terminess Pixel 16 Nerd Font Mono` | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminess-pixel-16.css` |
+| **Pixel 16** | Medium | `Terminess Pixel 16 Medium` | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminess-pixel-16.css` |
+| **Pixel 18** | Regular | `Terminess Pixel 18 Nerd Font Mono` | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminess-pixel-18.css` |
+| **Pixel 18** | Medium | `Terminess Pixel 18 Medium` | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminess-pixel-18.css` |
+| **Pixel 20** | Regular | `Terminess Pixel 20 Nerd Font Mono` | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminess-pixel-20.css` |
+| **Pixel 20** | Medium | `Terminess Pixel 20 Medium` | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminess-pixel-20.css` |
+| **Pixel 24** (alta densidade) | Regular | `Terminess Pixel 24 Nerd Font Mono` | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminess-pixel-24.css` |
+| **Pixel 24** | Medium | `Terminess Pixel 24 Medium` | `https://raw.githubusercontent.com/WladmirJunior/dotfiles/main/themes/blink/terminess-pixel-24.css` |
 
 Tap Import, then Save, then pick the font under Appearance > Font.
-
-The family name must match the `font-family` declared in the CSS character for
-character. You can also use `Terminess Pixel Nerd Font Mono` as an alias.
 
 ### Terminess Nerd Font Mono (Standard smoothed outline)
 
